@@ -55,9 +55,16 @@ export async function GET(request: NextRequest) {
           .eq('type', 'photo')
           .order('sort_order');
 
+        const { data: timelineEvents } = await supabaseAdmin
+          .from('timeline_events')
+          .select('id, event_date, event_text, sort_order')
+          .eq('legacy_id', legacy.id)
+          .order('sort_order');
+
         return {
           ...legacy,
           photos: media || [],
+          timeline_events: timelineEvents || [],
         };
       })
     );
