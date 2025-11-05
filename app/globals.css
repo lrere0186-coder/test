@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+body {
+  font-family: var(--font-inter), sans-serif;
+  background-color: #0A0A0A;
+  background-image: radial-gradient(ellipse 80% 80% at 50% -20%, rgba(212, 175, 55, 0.1), transparent);
+  background-attachment: fixed;
+  color: #e0e0e0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-playfair), serif;
+}
+
+.font-playfair {
+  font-family: var(--font-playfair), serif;
+}
+
+.font-inter {
+  font-family: var(--font-inter), sans-serif;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInZoom {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
