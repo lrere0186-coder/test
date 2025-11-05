@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Slot } from '../types';
 import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
 import FileUpload from '../components/FileUpload';
+import TimelineEditor, { TimelineEvent } from '../components/TimelineEditor';
 
 interface SlotReservationPageProps {
   slot: Slot;
@@ -69,7 +70,7 @@ const Step1: React.FC<{ slot: Slot; onNext: () => void }> = ({ slot, onNext }) =
         {String(slot.id).padStart(5, '0')}
       </p>
       <p className="text-sm text-gray-400">PRICE</p>
-      <p className="text-3xl font-semibold text-[#F5F5F0]">€{slot.price.toLocaleString()}</p>
+      <p className="text-3xl font-semibold text-[#F5F5F0]">€{(slot.price / 100).toLocaleString('fr-FR')}</p>
     </div>
     <button
       onClick={onNext}
@@ -94,6 +95,8 @@ interface Step2Props {
   setQuote: (quote: string) => void;
   photos: string[];
   setPhotos: (photos: string[]) => void;
+  timelineEvents: TimelineEvent[];
+  setTimelineEvents: (events: TimelineEvent[]) => void;
   onBack: () => void;
   onNext: () => void;
 }
@@ -109,11 +112,13 @@ const Step2: React.FC<Step2Props> = ({
   setQuote,
   photos,
   setPhotos,
+  timelineEvents,
+  setTimelineEvents,
   onBack,
   onNext,
 }) => {
   const wordCount = bio.split(/\s+/).filter((word) => word.length > 0).length;
-  const isOverLimit = wordCount > 500;
+  const isOverLimit = wordCount > 3000;
 
   return (
     <div>
@@ -156,7 +161,7 @@ const Step2: React.FC<Step2Props> = ({
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-1">
-            Biography (max. 500 words)
+            Biography (max. 3000 words)
           </label>
           <textarea
             rows={10}
@@ -164,18 +169,26 @@ const Step2: React.FC<Step2Props> = ({
             onChange={(e) => setBio(e.target.value)}
             className="w-full bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-md p-2 focus:ring-1 focus:ring-[#D4AF37] focus:outline-none"
           ></textarea>
-          <p className={`text-right text-sm ${isOverLimit ? 'text-red-400' : 'text-gray-400'}`}>
-            {wordCount} / 500 words {isOverLimit && '(Too many words!)'}
-          </p>
+          {isOverLimit && (
+            <p className="text-right text-sm text-red-400 mt-1">
+              Limite de 3000 mots atteinte
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Photos (optional, max 10)
           </label>
-          <FileUpload 
+          <FileUpload
             onUploadComplete={setPhotos}
             maxFiles={10}
             existingFiles={photos}
+          />
+        </div>
+        <div>
+          <TimelineEditor
+            events={timelineEvents}
+            onChange={setTimelineEvents}
           />
         </div>
         <div className="flex justify-between items-center pt-4">
@@ -206,6 +219,7 @@ interface Step3Props {
   quote: string;
   status: string;
   photos: string[];
+  timelineEvents: TimelineEvent[];
   onBack: () => void;
   onNext: () => void;
 }
@@ -217,6 +231,7 @@ const Step3: React.FC<Step3Props> = ({
   quote,
   status,
   photos,
+  timelineEvents,
   onBack,
   onNext,
 }) => {
@@ -249,6 +264,7 @@ const Step3: React.FC<Step3Props> = ({
         quote,
         status,
         photos,
+        timelineEvents,
       }),
     });
 
@@ -277,16 +293,12 @@ const Step3: React.FC<Step3Props> = ({
             <span className="text-gray-400">
               Legacy Slot #{String(slot.id).padStart(5, '0')}
             </span>
-            <span className="font-semibold">€{slot.price.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-400">Blockchain Fee</span>
-            <span className="font-semibold">€25.00</span>
+            <span className="font-semibold">€{(slot.price / 100).toLocaleString('fr-FR')}</span>
           </div>
           <div className="border-t border-gray-700 my-4"></div>
           <div className="flex justify-between text-lg font-bold">
             <span>Total</span>
-            <span className="text-[#D4AF37]">€{(slot.price + 25).toLocaleString()}</span>
+            <span className="text-[#D4AF37]">€{(slot.price / 100).toLocaleString('fr-FR')}</span>
           </div>
         </div>
         <div className="mt-8 text-xs text-gray-500">
@@ -418,6 +430,11 @@ const SlotReservationPage: React.FC<SlotReservationPageProps> = ({ slot, onBack 
   const [status, setStatus] = useState('Living');
   const [quote, setQuote] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([
+    { date: '', text: '' },
+    { date: '', text: '' },
+    { date: '', text: '' },
+  ]);
 
   // Release slot function
   const releaseSlot = async () => {
@@ -474,7 +491,9 @@ const SlotReservationPage: React.FC<SlotReservationPageProps> = ({ slot, onBack 
             quote={quote}
             setQuote={setQuote}
             photos={photos}
-            setPhotos={setPhotos} 
+            setPhotos={setPhotos}
+            timelineEvents={timelineEvents}
+            setTimelineEvents={setTimelineEvents}
             onBack={handleBack}
             onNext={() => setStep(3)}
           />
@@ -488,6 +507,7 @@ const SlotReservationPage: React.FC<SlotReservationPageProps> = ({ slot, onBack 
             quote={quote}
             status={status}
             photos={photos}
+            timelineEvents={timelineEvents}
             onBack={handleBack}
             onNext={() => setStep(4)}
           />

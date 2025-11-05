@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { slotId, fullName, biography, quote, status, userId, photos } = body;
+    const { slotId, fullName, biography, quote, status, userId, photos, timelineEvents } = body;
 
     // Vérifier que userId est présent
     if (!userId) {
@@ -62,17 +62,6 @@ export async function POST(request: NextRequest) {
           },
           quantity: 1,
         },
-        {
-          price_data: {
-            currency: 'eur',
-            product_data: {
-              name: 'Blockchain Registration Fee',
-              description: 'Permanent storage on blockchain',
-            },
-            unit_amount: 2500, // 25€ en centimes
-          },
-          quantity: 1,
-        },
       ],
       mode: 'payment',
       success_url: `${request.headers.get('origin')}/?success=true&slot=${slotId}`,
@@ -85,6 +74,7 @@ export async function POST(request: NextRequest) {
         quote: quote || '',
         status: status || 'Living',
         photos: JSON.stringify(photos || []),
+        timelineEvents: JSON.stringify(timelineEvents || []),
       },
     });
 

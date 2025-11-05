@@ -23,6 +23,12 @@ interface Legacy {
     title: string | null;
     caption: string | null;
   }[];
+  timeline_events?: {
+    id: string;
+    event_date: string;
+    event_text: string;
+    sort_order: number;
+  }[];
 }
 
 const ProfilePage: React.FC = () => {
@@ -174,6 +180,37 @@ const ProfilePage: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Timeline */}
+        {legacy.timeline_events && legacy.timeline_events.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-playfair font-bold text-[#F5F5F0] mb-8 text-center">
+              Life Timeline
+            </h2>
+            <div className="max-w-3xl mx-auto">
+              <div className="relative">
+                {/* Timeline line */}
+                <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30"></div>
+
+                {/* Timeline events */}
+                <div className="space-y-8">
+                  {legacy.timeline_events.map((event, index) => (
+                    <div key={event.id} className="relative pl-20">
+                      {/* Timeline dot */}
+                      <div className="absolute left-6 top-2 w-5 h-5 rounded-full bg-[#D4AF37] border-4 border-[#0A0A0A]"></div>
+
+                      {/* Event content */}
+                      <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-4">
+                        <div className="text-[#D4AF37] font-bold mb-2">{event.event_date}</div>
+                        <p className="text-gray-300 leading-relaxed">{event.event_text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         )}

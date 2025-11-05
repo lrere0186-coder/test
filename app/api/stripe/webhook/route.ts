@@ -41,10 +41,11 @@ export async function POST(request: NextRequest) {
     console.log('✅ Payment successful for session:', session.id);
 
     // Récupérer les métadonnées
-    const { slotId, userId, fullName, biography, quote, status, photos: photosString } = session.metadata || {};
-    
-    // Parser les photos (elles sont en JSON string)
+    const { slotId, userId, fullName, biography, quote, status, photos: photosString, timelineEvents: timelineEventsString } = session.metadata || {};
+
+    // Parser les photos et timeline events (elles sont en JSON string)
     const photos = photosString ? JSON.parse(photosString) : [];
+    const timelineEvents = timelineEventsString ? JSON.parse(timelineEventsString) : [];
 
     if (!userId) {
       console.error('No userId in metadata');
@@ -114,6 +115,35 @@ export async function POST(request: NextRequest) {
           // Ne pas throw ici - la legacy est créée, c'est l'essentiel
         } else {
           console.log(`✅ Saved ${photos.length} photo(s) for legacy ${legacy.id}`);
+        }
+      }
+
+      // 2c. Sauvegarder les timeline events
+      if (timelineEvents.length > 0 && legacy) {
+        // Filtrer les events vides (ceux qui n'ont ni date ni texte)
+        const validEvents = timelineEvents.filter(
+          (event: { date: string; text: string }) => event.date || event.text
+        );
+
+        if (validEvents.length > 0) {
+          const timelineRecords = validEvents.map((event: { date: string; text: string }, index: number) => ({
+            legacy_id: legacy.id,
+            event_date: event.date,
+            event_text: event.text,
+            sort_order: index,
+            created_at: new Date().toISOString(),
+          }));
+
+          const { error: timelineError } = await supabaseAdmin
+            .from('timeline_events')
+            .insert(timelineRecords);
+
+          if (timelineError) {
+            console.error('Error saving timeline events:', timelineError);
+            // Ne pas throw ici - la legacy est créée, c'est l'essentiel
+          } else {
+            console.log(`✅ Saved ${validEvents.length} timeline event(s) for legacy ${legacy.id}`);
+          }
         }
       }
 

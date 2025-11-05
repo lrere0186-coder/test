@@ -45,11 +45,11 @@ const SlotCard: React.FC<SlotCardProps> = ({ slot, onSelect, onRelease }) => {
         };
       case SlotStatus.Locked:
         return {
-          bgClass: 'bg-[#0a0a14] border-blue-500/30 opacity-60',
-          badgeClass: 'bg-blue-900/50 text-blue-400 border-blue-500/50',
+          bgClass: 'bg-[#0a0a0a] border-gray-500/30 opacity-60',
+          badgeClass: 'bg-gray-900/50 text-gray-400 border-gray-500/50',
           badgeText: 'LOCKED',
-          priceClass: 'text-blue-400',
-          buttonClass: 'bg-blue-900/50 text-blue-400 cursor-not-allowed',
+          priceClass: 'text-gray-400',
+          buttonClass: 'bg-gray-900/50 text-gray-400 cursor-not-allowed',
           buttonText: 'Coming Soon',
           glowClass: '',
           clickable: false,

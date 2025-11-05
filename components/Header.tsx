@@ -63,7 +63,7 @@ const Header: React.FC<HeaderProps> = ({ navigateTo, currentPage }) => {
               onClick={() => navigateTo(Page.Profile)}
               className="cursor-pointer text-[#F5F5F0] hover:text-[#D4AF37] transition-colors bg-transparent border-none"
             >
-              EXAMPLE LEGACY
+              LEGACY GALLERY
             </button>
             <button
               onClick={() => navigateTo(Page.Dashboard)}
@@ -75,7 +75,7 @@ const Header: React.FC<HeaderProps> = ({ navigateTo, currentPage }) => {
               onClick={() => navigateTo(Page.AllSlots)}
               className="cursor-pointer text-[#F5F5F0] hover:text-[#D4AF37] transition-colors bg-transparent border-none"
             >
-              FULL VAULT
+              FULL SLOTS
             </button>
           </nav>
         )}

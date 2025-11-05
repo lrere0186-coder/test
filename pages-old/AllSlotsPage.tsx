@@ -112,8 +112,8 @@ const AllSlotsPage: React.FC = () => {
           <div className="text-2xl font-bold text-red-400">{stats.sold}</div>
           <div className="text-sm text-gray-400">Sold</div>
         </div>
-        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center border border-blue-500/20">
-          <div className="text-2xl font-bold text-blue-400">{stats.locked}</div>
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center border border-gray-500/20">
+          <div className="text-2xl font-bold text-gray-400">{stats.locked}</div>
           <div className="text-sm text-gray-400">Locked</div>
         </div>
       </div>
@@ -180,7 +180,7 @@ const AllSlotsPage: React.FC = () => {
                 <span className="text-gray-300">Sold</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                <div className="w-3 h-3 bg-gray-500 rounded"></div>
                 <span className="text-gray-300">Locked</span>
               </div>
             </div>
