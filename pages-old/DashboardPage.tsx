@@ -22,6 +22,12 @@ interface Legacy {
     title: string | null;
     caption: string | null;
   }[];
+  timeline_events?: {
+    id: string;
+    event_date: string;
+    event_text: string;
+    sort_order: number;
+  }[];
 }
 
 interface Stats {
@@ -235,6 +241,30 @@ const DashboardPage: React.FC = () => {
                         {legacy.biography}
                       </p>
 
+                      {/* Timeline */}
+                      {legacy.timeline_events && legacy.timeline_events.length > 0 && (
+                        <div className="mb-4 p-3 bg-[#0A0A0A] rounded-lg border border-[#D4AF37]/20">
+                          <h4 className="text-xs font-bold text-[#D4AF37] mb-2">Timeline Events</h4>
+                          <div className="space-y-2">
+                            {legacy.timeline_events.slice(0, 3).map((event) => (
+                              <div key={event.id} className="flex gap-2 text-xs">
+                                <span className="text-[#D4AF37] font-bold min-w-[60px]">
+                                  {event.event_date}
+                                </span>
+                                <span className="text-gray-400 line-clamp-1">
+                                  {event.event_text}
+                                </span>
+                              </div>
+                            ))}
+                            {legacy.timeline_events.length > 3 && (
+                              <p className="text-xs text-gray-500 italic">
+                                +{legacy.timeline_events.length - 3} more events
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-4 text-xs text-gray-500">
                         <span>
                           Created: {new Date(legacy.created_at).toLocaleDateString('en-US', {
@@ -245,6 +275,12 @@ const DashboardPage: React.FC = () => {
                         </span>
                         <span>•</span>
                         <span>{legacy.photos.length} photo(s)</span>
+                        {legacy.timeline_events && legacy.timeline_events.length > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>{legacy.timeline_events.length} timeline event(s)</span>
+                          </>
+                        )}
                       </div>
                     </div>
 
