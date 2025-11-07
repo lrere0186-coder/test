@@ -1,0 +1,5240 @@
+================================================================================
+                    EXPORT COMPLET DU PROJET LEGACY VAULT
+================================================================================
+Date d'export : $(date '+%Y-%m-%d %H:%M:%S')
+================================================================================
+
+
+================================================================================
+FILE: .gitignore
+================================================================================
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+
+
+================================================================================
+FILE: INSTRUCTIONS-SUPABASE.md
+================================================================================
+
+# 📋 INSTRUCTIONS POUR CORRIGER SUPABASE
+
+## 🚨 PROBLÈMES RÉSOLUS
+
+Toutes les modifications de code sont **terminées et pushées** !
+Il reste juste à exécuter 2 scripts SQL dans votre base de données Supabase.
+
+---
+
+## 📝 ÉTAPE 1 : Corriger les prix des slots
+
+### Pourquoi ?
+Les prix actuels sont incorrects (slot 201 = 100.25€ au lieu de suivre la logique +50€/2 slots).
+
+### Comment faire ?
+
+1. **Allez sur Supabase** : https://supabase.com/dashboard
+2. **Ouvrez votre projet**
+3. Cliquez sur **"SQL Editor"** dans la barre latérale
+4. Cliquez sur **"New query"**
+5. **Copiez-collez** le contenu du fichier `fix-prices.sql` :
+
+```sql
+-- ===============================================
+-- SCRIPT DE CORRECTION DES PRIX DES SLOTS
+-- Logique : +50€ tous les 2 slots
+-- Slot 1-2: 5000€ (500000 centimes)
+-- Slot 3-4: 5050€ (505000 centimes)
+-- Slot 5-6: 5100€ (510000 centimes)
+-- etc.
+-- ===============================================
+
+-- Mise à jour des prix pour tous les 10,000 slots
+UPDATE slots
+SET price = 500000 + (FLOOR((id - 1) / 2) * 5000)
+WHERE id >= 1 AND id <= 10000;
+
+-- Vérification : Afficher les 20 premiers slots
+SELECT id, price, price / 100 as price_in_euros, status
+FROM slots
+ORDER BY id
+LIMIT 20;
+```
+
+6. **Cliquez sur "Run"** (ou Ctrl+Entrée)
+7. **Vérifiez les résultats** : Vous devriez voir les 20 premiers slots avec leurs nouveaux prix
+
+✅ **Résultat attendu :**
+- Slot 1-2 : 5000€
+- Slot 3-4 : 5050€
+- Slot 5-6 : 5100€
+- etc.
+
+---
+
+## 🧹 ÉTAPE 2 : Nettoyer les données de test
+
+### Pourquoi ?
+Vous avez des slots "sold" qui sont des données de test (70 slots environ).
+
+### Comment faire ?
+
+1. Dans le **SQL Editor** de Supabase
+2. Créez une **nouvelle query**
+3. **Copiez-collez** le contenu du fichier `clean-test-data.sql` :
+
+```sql
+-- ===============================================
+-- SCRIPT DE NETTOYAGE DES DONNÉES DE TEST
+-- ===============================================
+
+-- 1. Réinitialiser tous les slots "sold" en "locked"
+-- (Les slots 201+ doivent être locked, seuls les 200 premiers disponibles)
+UPDATE slots
+SET status = 'locked', reserved_until = NULL, updated_at = NOW()
+WHERE status = 'sold' AND id > 200;
+
+-- 2. Pour les slots 1-200 qui sont sold, les remettre en available
+UPDATE slots
+SET status = 'available', reserved_until = NULL, updated_at = NOW()
+WHERE status = 'sold' AND id <= 200;
+
+-- 3. Supprimer toutes les legacies de test
+DELETE FROM timeline_events WHERE legacy_id IN (SELECT id FROM legacies);
+DELETE FROM media WHERE legacy_id IN (SELECT id FROM legacies);
+DELETE FROM payments;
+DELETE FROM legacies;
+
+-- 4. Vérifier l'état final
+SELECT
+  status,
+  COUNT(*) as count
+FROM slots
+GROUP BY status
+ORDER BY status;
+```
+
+4. **Cliquez sur "Run"**
+5. **Vérifiez les résultats** : Vous devriez voir le compte de slots par statut
+
+✅ **Résultat attendu :**
+- available : ~200 slots
+- locked : ~9800 slots
+- reserved : 0
+- sold : 0
+
+---
+
+## ⚠️ ATTENTION
+
+**NE LANCEZ PAS LE SCRIPT DE NETTOYAGE SI :**
+- Vous avez de vraies ventes/legacies de clients
+- Vous voulez garder les données de test
+
+**Sinon, toutes les legacies seront supprimées !**
+
+---
+
+## 🎉 ÉTAPE 3 : Tester le site
+
+Après avoir exécuté les scripts :
+
+1. **Rechargez votre site** : `npm run dev`
+2. **Allez sur "The Slots"** : Vous devriez voir exactement 200 slots disponibles
+3. **Vérifiez les prix** :
+   - Slot 1 : 5000€
+   - Slot 3 : 5050€
+   - Slot 5 : 5100€
+4. **Testez la timeline** :
+   - Réservez un slot
+   - Dans Step 2, ajoutez des events à la timeline
+   - Tapez une date, puis un texte, appuyez sur **Entrée**
+   - Vérifiez le design avec la flèche
+5. **Allez sur le Dashboard** :
+   - Si vous avez des legacies, vous devriez voir la timeline affichée
+
+---
+
+## 📚 MODIFICATIONS EFFECTUÉES DANS LE CODE
+
+Tout est **déjà pushé** sur la branche `claude/improve-project-011CUphaYWmx3poybNhb8inZ` :
+
+✅ **Fichiers modifiés :**
+1. `components/TimelineEditor.tsx` - Nouveau design avec flèche et Enter
+2. `pages-old/DashboardPage.tsx` - Affichage de la timeline
+3. `app/api/user/legacies/route.ts` - API récupère les timeline events
+4. `fix-prices.sql` - Script de correction des prix
+5. `clean-test-data.sql` - Script de nettoyage
+
+✅ **Fonctionnalités :**
+- Prix correctement calculés (+50€/2 slots)
+- Affichage limité à 200 slots disponibles
+- Timeline avec design amélioré (flèche, date gauche, texte droite, Enter pour valider)
+- Timeline visible dans le Dashboard
+- Scripts SQL pour corriger la base de données
+
+---
+
+## 🆘 BESOIN D'AIDE ?
+
+Si vous avez des problèmes :
+
+1. **Erreur SQL** : Vérifiez que vous êtes bien connecté à votre projet Supabase
+2. **Données manquantes** : Assurez-vous que la table `timeline_events` existe
+3. **Prix toujours incorrects** : Exécutez à nouveau le script `fix-prices.sql`
+4. **270 slots au lieu de 200** : Le déblocage automatique maintient toujours 200 slots "available"
+
+---
+
+## ✅ CHECKLIST FINALE
+
+- [ ] Script `fix-prices.sql` exécuté dans Supabase
+- [ ] Script `clean-test-data.sql` exécuté dans Supabase (si souhaité)
+- [ ] Site relancé avec `npm run dev`
+- [ ] Vérification : 200 slots disponibles exactement
+- [ ] Vérification : Prix corrects (5000€, 5050€, 5100€...)
+- [ ] Test : Timeline fonctionne avec Enter
+- [ ] Test : Timeline visible dans Dashboard
+
+**TOUT EST PRÊT ! 🚀**
+
+
+
+================================================================================
+FILE: README.md
+================================================================================
+
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+
+## Getting Started
+
+First, run the development server:
+
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+
+## Learn More
+
+To learn more about Next.js, take a look at the following resources:
+
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+
+
+================================================================================
+FILE: app/api/slots/[id]/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const slotId = parseInt(params.id);
+
+    // Vérifier que l'ID est valide
+    if (isNaN(slotId) || slotId < 1 || slotId > 10000) {
+      return NextResponse.json(
+        { error: 'Invalid slot ID. Must be between 1 and 10000' },
+        { status: 400 }
+      );
+    }
+
+    // Récupérer le slot depuis la DB
+    const { data: slot, error } = await supabase
+      .from('slots')
+      .select('*')
+      .eq('id', slotId)
+      .single();
+
+    if (error || !slot) {
+      return NextResponse.json(
+        { error: 'Slot not found' },
+        { status: 404 }
+      );
+    }
+
+    // Transformer les données
+    const formattedSlot = {
+      id: slot.id,
+      price: slot.price / 100, // Convertir centimes → euros
+      status: slot.status,
+      reservedUntil: slot.reserved_until ? new Date(slot.reserved_until) : null,
+      ownerId: slot.owner_id,
+      createdAt: slot.created_at,
+      updatedAt: slot.updated_at
+    };
+
+    // Si le slot a un owner, récupérer aussi les infos de la legacy
+    let legacy = null;
+    if (slot.owner_id) {
+      const { data: legacyData } = await supabase
+        .from('legacies')
+        .select('*')
+        .eq('slot_id', slotId)
+        .single();
+      
+      if (legacyData) {
+        legacy = {
+          id: legacyData.id,
+          fullName: legacyData.full_name,
+          quote: legacyData.quote,
+          biography: legacyData.biography,
+          profileImage: legacyData.profile_image_url,
+          birthDate: legacyData.birth_date,
+          deathDate: legacyData.death_date,
+          isPublic: legacyData.is_public,
+          arweaveHash: legacyData.arweave_hash,
+          ipfsHash: legacyData.ipfs_hash,
+          blockchainTx: legacyData.blockchain_tx
+        };
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      slot: formattedSlot,
+      legacy: legacy
+    });
+
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/slots/all/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
+
+export async function GET(request: NextRequest) {
+  try {
+    // Récupérer TOUS les slots avec une limite explicite
+    const { data: slots, error } = await supabase
+      .from('slots')
+      .select('*')
+      .order('id', { ascending: true })
+      .limit(10000); // Augmenter la limite
+
+    if (error) {
+      console.error('Supabase error:', error);
+      return NextResponse.json(
+        { error: 'Database error', details: error.message },
+        { status: 500 }
+      );
+    }
+
+    // Reste du code inchangé...
+    const formattedSlots = slots?.map(slot => ({
+      id: slot.id,
+      price: slot.price / 100,
+      status: slot.status,
+      reservedUntil: slot.reserved_until ? new Date(slot.reserved_until) : undefined
+    })) || [];
+
+    const stats = {
+      total: formattedSlots.length,
+      available: formattedSlots.filter(s => s.status === 'available').length,
+      reserved: formattedSlots.filter(s => s.status === 'reserved').length,
+      sold: formattedSlots.filter(s => s.status === 'sold').length,
+      locked: formattedSlots.filter(s => s.status === 'locked').length,
+    };
+
+    return NextResponse.json({
+      success: true,
+      count: formattedSlots.length,
+      stats: stats,
+      slots: formattedSlots
+    });
+
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/slots/available/route.ts
+================================================================================
+
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+export async function GET() {
+  try {
+    // 1. DÉBLOCAGE AUTOMATIQUE : S'assurer qu'il y a toujours 200 slots available
+    const { count: availableCount } = await supabaseAdmin
+      .from('slots')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'available');
+
+    const currentAvailable = availableCount || 0;
+    const targetAvailable = 200;
+
+    if (currentAvailable < targetAvailable) {
+      const slotsToUnlock = targetAvailable - currentAvailable;
+
+      const { data: lockedSlots } = await supabaseAdmin
+        .from('slots')
+        .select('id')
+        .eq('status', 'locked')
+        .order('id', { ascending: true })
+        .limit(slotsToUnlock);
+
+      if (lockedSlots && lockedSlots.length > 0) {
+        const idsToUnlock = lockedSlots.map(slot => slot.id);
+
+        await supabaseAdmin
+          .from('slots')
+          .update({ status: 'available' })
+          .in('id', idsToUnlock);
+
+        console.log(`✅ Unlocked ${idsToUnlock.length} slots`);
+      }
+    }
+
+    // 2. RÉCUPÉRER LES SLOTS DISPONIBLES
+    const { data: slots, error } = await supabaseAdmin
+      .from('slots')
+      .select('*')
+      .eq('status', 'available')
+      .order('id', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching slots:', error);
+      return NextResponse.json(
+        { error: 'Failed to fetch slots' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      slots: slots || [],
+    });
+  } catch (error) {
+    console.error('Error in slots API:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/slots/expire-reservations/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
+
+export async function POST(request: NextRequest) {
+  try {
+    const now = new Date().toISOString();
+
+    // Récupérer tous les slots réservés dont la date d'expiration est passée
+    const { data: expiredSlots, error: fetchError } = await supabaseAdmin
+      .from('slots')
+      .select('*')
+      .eq('status', 'reserved')
+      .lt('reserved_until', now); // reserved_until < now
+
+    if (fetchError) {
+      console.error('Fetch error:', fetchError);
+      return NextResponse.json(
+        { error: 'Failed to fetch expired slots', details: fetchError.message },
+        { status: 500 }
+      );
+    }
+
+    if (!expiredSlots || expiredSlots.length === 0) {
+      return NextResponse.json({
+        success: true,
+        message: 'No expired reservations found',
+        expiredCount: 0
+      });
+    }
+
+    // Extraire les IDs des slots expirés
+    const expiredSlotIds = expiredSlots.map(slot => slot.id);
+
+    // Remettre ces slots en "available"
+    const { data: updatedSlots, error: updateError } = await supabaseAdmin
+      .from('slots')
+      .update({
+        status: 'available',
+        reserved_until: null,
+        updated_at: new Date().toISOString()
+      })
+      .in('id', expiredSlotIds)
+      .select();
+
+    if (updateError) {
+      console.error('Update error:', updateError);
+      return NextResponse.json(
+        { error: 'Failed to update expired slots', details: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    console.log(`✅ Expired ${expiredSlotIds.length} slot(s):`, expiredSlotIds);
+
+    return NextResponse.json({
+      success: true,
+      message: `Successfully expired ${expiredSlotIds.length} reservation(s)`,
+      expiredCount: expiredSlotIds.length,
+      expiredSlotIds: expiredSlotIds
+    });
+
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/slots/release/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { slotId } = body;
+
+    if (!slotId) {
+      return NextResponse.json(
+        { error: 'Slot ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Remettre le slot en "available"
+    const { data: updatedSlot, error: updateError } = await supabaseAdmin
+      .from('slots')
+      .update({
+        status: 'available',
+        reserved_until: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', slotId)
+      .eq('status', 'reserved') // Seulement si réservé
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Release error:', updateError);
+      return NextResponse.json(
+        { error: 'Failed to release slot', details: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    if (!updatedSlot) {
+      return NextResponse.json(
+        { error: 'Slot was not reserved or does not exist' },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Slot #${slotId} is now available again`
+    });
+
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/slots/reserve/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { slotId } = body;
+
+    if (!slotId) {
+      return NextResponse.json(
+        { error: 'Slot ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier que le slot existe et est disponible
+    const { data: slot, error: fetchError } = await supabaseAdmin
+      .from('slots')
+      .select('*')
+      .eq('id', slotId)
+      .single();
+
+    if (fetchError || !slot) {
+      return NextResponse.json(
+        { error: 'Slot not found' },
+        { status: 404 }
+      );
+    }
+
+    if (slot.status !== 'available') {
+      return NextResponse.json(
+        { error: 'Slot is not available', status: slot.status },
+        { status: 400 }
+      );
+    }
+
+    // Calculer la date d'expiration (1 heure)
+    const reservedUntil = new Date();
+    reservedUntil.setHours(reservedUntil.getHours() + 1);
+
+    // Mettre à jour le slot en "reserved"
+    const { data: updatedSlot, error: updateError } = await supabaseAdmin
+      .from('slots')
+      .update({
+        status: 'reserved',
+        reserved_until: reservedUntil.toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', slotId)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Update error:', updateError);
+      return NextResponse.json(
+        { error: 'Failed to reserve slot', details: updateError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      slot: {
+        id: updatedSlot.id,
+        price: updatedSlot.price / 100,
+        status: updatedSlot.status,
+        reservedUntil: updatedSlot.reserved_until
+      },
+      message: `Slot #${slotId} reserved for 1 hour`
+    });
+
+  } catch (error) {
+    console.error('API error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/slots/unlock/route.ts
+================================================================================
+
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+export async function POST() {
+  try {
+    // 1. Compter combien de slots sont actuellement available
+    const { count: availableCount } = await supabaseAdmin
+      .from('slots')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'available');
+
+    const currentAvailable = availableCount || 0;
+    const targetAvailable = 200; // On veut toujours 200 slots disponibles
+
+    // 2. Si on a moins de 200 available, débloquer des slots locked
+    if (currentAvailable < targetAvailable) {
+      const slotsToUnlock = targetAvailable - currentAvailable;
+
+      // Trouver les X premiers slots locked et les débloquer
+      const { data: lockedSlots } = await supabaseAdmin
+        .from('slots')
+        .select('id')
+        .eq('status', 'locked')
+        .order('id', { ascending: true })
+        .limit(slotsToUnlock);
+
+      if (lockedSlots && lockedSlots.length > 0) {
+        const idsToUnlock = lockedSlots.map(slot => slot.id);
+
+        await supabaseAdmin
+          .from('slots')
+          .update({ status: 'available' })
+          .in('id', idsToUnlock);
+
+        console.log(`✅ Unlocked ${idsToUnlock.length} slots: ${idsToUnlock[0]} to ${idsToUnlock[idsToUnlock.length - 1]}`);
+      }
+    }
+
+    // 3. Retourner le statut
+    const { count: newAvailableCount } = await supabaseAdmin
+      .from('slots')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'available');
+
+    return NextResponse.json({
+      success: true,
+      availableSlots: newAvailableCount,
+      unlockedCount: (newAvailableCount || 0) - currentAvailable,
+    });
+  } catch (error) {
+    console.error('Error unlocking slots:', error);
+    return NextResponse.json(
+      { error: 'Failed to unlock slots' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/stripe/checkout/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { stripe } from '@/lib/stripe';
+import { supabase } from '@/lib/supabase';
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { slotId, fullName, biography, quote, status, userId, photos, timelineEvents } = body;
+
+    // Vérifier que userId est présent
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User must be authenticated' },
+        { status: 401 }
+      );
+    }
+
+
+    // Validation
+    if (!slotId || !fullName || !biography) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Récupérer les infos du slot
+    const { data: slot, error: slotError } = await supabase
+      .from('slots')
+      .select('*')
+      .eq('id', slotId)
+      .single();
+
+    if (slotError || !slot) {
+      return NextResponse.json(
+        { error: 'Slot not found' },
+        { status: 404 }
+      );
+    }
+
+    // Vérifier que le slot est réservé (pas vendu)
+    if (slot.status !== 'reserved') {
+      return NextResponse.json(
+        { error: 'Slot is not reserved or already sold' },
+        { status: 400 }
+      );
+    }
+
+    // Créer une session Stripe Checkout
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: `Legacy Vault Slot #${String(slotId).padStart(5, '0')}`,
+              description: `Permanent digital legacy slot for ${fullName}`,
+              images: ['https://legacy-vault.com/og-image.png'], // Tu changeras ça plus tard
+            },
+            unit_amount: slot.price, // Prix en centimes
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${request.headers.get('origin')}/?success=true&slot=${slotId}`,
+      cancel_url: `${request.headers.get('origin')}/?canceled=true`,
+      metadata: {
+        slotId: slotId.toString(),
+        userId: userId,
+        fullName,
+        biography,
+        quote: quote || '',
+        status: status || 'Living',
+        photos: JSON.stringify(photos || []),
+        timelineEvents: JSON.stringify(timelineEvents || []),
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      sessionId: session.id,
+      url: session.url,
+    });
+  } catch (error) {
+    console.error('Stripe checkout error:', error);
+    return NextResponse.json(
+      { error: 'Failed to create checkout session' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/api/stripe/webhook/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { stripe } from '@/lib/stripe';
+import { supabaseAdmin } from '@/lib/supabase';
+import Stripe from 'stripe';
+
+// IMPORTANT: Désactiver le body parser de Next.js pour les webhooks
+export const runtime = 'nodejs';
+
+export async function POST(request: NextRequest) {
+  const body = await request.text();
+  const signature = request.headers.get('stripe-signature');
+
+  if (!signature) {
+    return NextResponse.json(
+      { error: 'No signature found' },
+      { status: 400 }
+    );
+  }
+
+  let event: Stripe.Event;
+
+  try {
+    // Vérifier la signature du webhook
+    event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET!
+    );
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err);
+    return NextResponse.json(
+      { error: 'Webhook signature verification failed' },
+      { status: 400 }
+    );
+  }
+
+  // Gérer l'événement
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session;
+    
+    console.log('✅ Payment successful for session:', session.id);
+
+    // Récupérer les métadonnées
+    const { slotId, userId, fullName, biography, quote, status, photos: photosString, timelineEvents: timelineEventsString } = session.metadata || {};
+
+    // Parser les photos et timeline events (elles sont en JSON string)
+    const photos = photosString ? JSON.parse(photosString) : [];
+    const timelineEvents = timelineEventsString ? JSON.parse(timelineEventsString) : [];
+
+    if (!userId) {
+      console.error('No userId in metadata');
+      return NextResponse.json({ error: 'No userId' }, { status: 400 });
+    }
+
+    if (!slotId) {
+      console.error('No slotId in metadata');
+      return NextResponse.json({ error: 'No slotId' }, { status: 400 });
+    }
+
+    try {
+      // 1. Mettre à jour le slot en "sold"
+      const { error: slotError } = await supabaseAdmin
+        .from('slots')
+        .update({
+          status: 'sold',
+          reserved_until: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', parseInt(slotId));
+
+      if (slotError) {
+        console.error('Error updating slot:', slotError);
+        throw slotError;
+      }
+
+        // 2. Créer l'entrée dans la table legacies
+      const { data: legacy, error: legacyError } = await supabaseAdmin
+        .from('legacies')
+        .insert({
+          slot_id: parseInt(slotId),
+          user_id: userId,
+          full_name: fullName,
+          biography: biography,
+          quote: quote,
+          status: status,
+          is_public: true,
+          created_at: new Date().toISOString(),
+        })
+        .select()
+        .single();
+
+      if (legacyError) {
+        console.error('Error creating legacy:', legacyError);
+        throw legacyError;
+      }
+
+
+      // 2b. Sauvegarder les photos dans la table media
+      if (photos.length > 0 && legacy) {
+        const mediaRecords = photos.map((photoUrl: string, index: number) => ({
+          legacy_id: legacy.id,
+          type: 'photo',
+          url: photoUrl,
+          mime_type: 'image/jpeg', // On peut améliorer ça plus tard
+          sort_order: index,
+          created_at: new Date().toISOString(),
+        }));
+
+        const { error: mediaError } = await supabaseAdmin
+          .from('media')
+          .insert(mediaRecords);
+
+        if (mediaError) {
+          console.error('Error saving media:', mediaError);
+          // Ne pas throw ici - la legacy est créée, c'est l'essentiel
+        } else {
+          console.log(`✅ Saved ${photos.length} photo(s) for legacy ${legacy.id}`);
+        }
+      }
+
+      // 2c. Sauvegarder les timeline events
+      if (timelineEvents.length > 0 && legacy) {
+        // Filtrer les events vides (ceux qui n'ont ni date ni texte)
+        const validEvents = timelineEvents.filter(
+          (event: { date: string; text: string }) => event.date || event.text
+        );
+
+        if (validEvents.length > 0) {
+          const timelineRecords = validEvents.map((event: { date: string; text: string }, index: number) => ({
+            legacy_id: legacy.id,
+            event_date: event.date,
+            event_text: event.text,
+            sort_order: index,
+            created_at: new Date().toISOString(),
+          }));
+
+          const { error: timelineError } = await supabaseAdmin
+            .from('timeline_events')
+            .insert(timelineRecords);
+
+          if (timelineError) {
+            console.error('Error saving timeline events:', timelineError);
+            // Ne pas throw ici - la legacy est créée, c'est l'essentiel
+          } else {
+            console.log(`✅ Saved ${validEvents.length} timeline event(s) for legacy ${legacy.id}`);
+          }
+        }
+      }
+
+      // 3. Enregistrer le paiement
+      const { error: paymentError } = await supabaseAdmin
+        .from('payments')
+        .insert({
+          slot_id: parseInt(slotId),
+          user_id: userId,
+          amount: session.amount_total,
+          currency: session.currency,
+          stripe_session_id: session.id,
+          stripe_payment_intent: session.payment_intent as string,
+          status: 'succeeded',
+          created_at: new Date().toISOString(),
+        });
+
+      if (paymentError) {
+        console.error('Error recording payment:', paymentError);
+      }
+
+      console.log(`✅ Slot #${slotId} successfully sold to ${fullName}`);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Payment processed successfully',
+      });
+    } catch (error) {
+      console.error('Error processing payment:', error);
+      return NextResponse.json(
+        { error: 'Failed to process payment' },
+        { status: 500 }
+      );
+    }
+  }
+
+  return NextResponse.json({ received: true });
+}
+
+
+================================================================================
+FILE: app/api/user/legacies/route.ts
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+export async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const userId = searchParams.get('userId');
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const { data: legacies, error: legaciesError } = await supabaseAdmin
+      .from('legacies')
+      .select(`
+        id,
+        slot_id,
+        full_name,
+        biography,
+        quote,
+        status,
+        birth_date,
+        death_date,
+        created_at,
+        slots (
+          id,
+          price,
+          status
+        )
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (legaciesError) {
+      console.error('Error fetching legacies:', legaciesError);
+      return NextResponse.json(
+        { error: 'Failed to fetch legacies' },
+        { status: 500 }
+      );
+    }
+
+    const legaciesWithPhotos = await Promise.all(
+      (legacies || []).map(async (legacy) => {
+        const { data: media } = await supabaseAdmin
+          .from('media')
+          .select('id, type, url, title, caption')
+          .eq('legacy_id', legacy.id)
+          .eq('type', 'photo')
+          .order('sort_order');
+
+        const { data: timelineEvents } = await supabaseAdmin
+          .from('timeline_events')
+          .select('id, event_date, event_text, sort_order')
+          .eq('legacy_id', legacy.id)
+          .order('sort_order');
+
+        return {
+          ...legacy,
+          photos: media || [],
+          timeline_events: timelineEvents || [],
+        };
+      })
+    );
+
+    const { data: payments } = await supabaseAdmin
+      .from('payments')
+      .select('amount, created_at')
+      .eq('user_id', userId);
+
+    const totalSpent = payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
+    const totalSlots = legacies?.length || 0;
+
+    return NextResponse.json({
+      success: true,
+      legacies: legaciesWithPhotos,
+      stats: {
+        totalSlots,
+        totalSpent: totalSpent / 100,
+      },
+    });
+  } catch (error) {
+    console.error('Error in user legacies API:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+
+================================================================================
+FILE: app/auth/callback/route.ts
+================================================================================
+
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
+
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+
+  if (code) {
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            cookieStore.set({ name, value, ...options })
+          },
+          remove(name: string, options: any) {
+            cookieStore.set({ name, value: '', ...options })
+          },
+        },
+      }
+    )
+    await supabase.auth.exchangeCodeForSession(code)
+  }
+
+  return NextResponse.redirect(requestUrl.origin)
+}
+
+
+================================================================================
+FILE: app/auth/login/page.tsx
+================================================================================
+
+'use client';
+import { useState } from 'react';
+import { createClient } from '@/lib/supabase-browser';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const supabase = createClient();
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        router.push('/');
+        router.refresh();
+      }
+    } catch (err) {
+      setError('An unexpected error occurred');
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center px-4">
+      <div className="max-w-md w-full">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-playfair font-bold text-[#D4AF37] mb-2">
+            Welcome Back
+          </h1>
+          <p className="text-gray-400">Sign in to your Legacy Vault account</p>
+        </div>
+
+        <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-8">
+          <form onSubmit={handleLogin} className="space-y-6">
+            {error && (
+              <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 rounded-md text-sm">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-4 py-3 text-white focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
+                placeholder="your@email.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-4 py-3 text-white focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-[#D4AF37] text-[#0A0A0A] font-bold py-3 rounded-md hover:bg-yellow-300 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center text-sm text-gray-400">
+            Don't have an account?{' '}
+            <Link href="/auth/signup" className="text-[#D4AF37] hover:text-yellow-300">
+              Sign up
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: app/auth/signup/page.tsx
+================================================================================
+
+'use client';
+import { useState } from 'react';
+import { createClient } from '@/lib/supabase-browser';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+export default function SignupPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const router = useRouter();
+  const supabase = createClient();
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    // Validation
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        setSuccess(true);
+        // Auto-login après signup
+        setTimeout(() => {
+          router.push('/');
+          router.refresh();
+        }, 2000);
+      }
+    } catch (err) {
+      setError('An unexpected error occurred');
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center px-4">
+      <div className="max-w-md w-full">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-playfair font-bold text-[#D4AF37] mb-2">
+            Create Account
+          </h1>
+          <p className="text-gray-400">Join Legacy Vault and secure your legacy</p>
+        </div>
+
+        <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-8">
+          {success ? (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Account Created!</h3>
+              <p className="text-gray-400">Redirecting you to the homepage...</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSignup} className="space-y-6">
+              {error && (
+                <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-4 py-3 text-white focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
+                  placeholder="your@email.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="w-full bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-4 py-3 text-white focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Confirm Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-4 py-3 text-white focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-[#D4AF37] text-[#0A0A0A] font-bold py-3 rounded-md hover:bg-yellow-300 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Creating account...' : 'Create Account'}
+              </button>
+            </form>
+          )}
+
+          {!success && (
+            <div className="mt-6 text-center text-sm text-gray-400">
+              Already have an account?{' '}
+              <Link href="/auth/login" className="text-[#D4AF37] hover:text-yellow-300">
+                Sign in
+              </Link>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: app/globals.css
+================================================================================
+
+@import "tailwindcss";
+
+body {
+  font-family: var(--font-inter), sans-serif;
+  background-color: #0A0A0A;
+  background-image: radial-gradient(ellipse 80% 80% at 50% -20%, rgba(212, 175, 55, 0.1), transparent);
+  background-attachment: fixed;
+  color: #e0e0e0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-playfair), serif;
+}
+
+.font-playfair {
+  font-family: var(--font-playfair), serif;
+}
+
+.font-inter {
+  font-family: var(--font-inter), sans-serif;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInZoom {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+
+================================================================================
+FILE: app/layout.tsx
+================================================================================
+
+import type { Metadata } from "next";
+import { Inter, Playfair_Display } from "next/font/google";
+import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  weight: ["700", "800", "900"],
+  variable: "--font-playfair",
+});
+
+export const metadata: Metadata = {
+  title: "Legacy Vault - 10,000 Slots. Infinite Memory.",
+  description: "A platform selling 10,000 numbered digital immortality slots, each containing a person's permanent biography and life story.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body className={`${inter.variable} ${playfair.variable} antialiased`}>
+        {children}
+      </body>
+    </html>
+  );
+}
+
+
+================================================================================
+FILE: app/page.tsx
+================================================================================
+
+'use client';
+
+import React, { useState, useCallback } from 'react';
+import Header from '@/components/Header';
+import Footer from '@/components/Footer';
+import AutoExpireReservations from '@/components/AutoExpireReservations';
+import LandingPage from '@/pages-old/LandingPage';
+import SlotsAvailablePage from '@/pages-old/SlotsAvailablePage';
+import SlotReservationPage from '@/pages-old/SlotReservationPage';
+import LegacyProfilePage from '@/pages-old/LegacyProfilePage';
+import DashboardPage from '@/pages-old/DashboardPage';
+import AllSlotsPage from '@/pages-old/AllSlotsPage';
+import { Page, Slot } from '@/types';
+
+export default function Home() {
+  const [currentPage, setCurrentPage] = useState<Page>(Page.Landing);
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+
+  const navigateTo = useCallback((page: Page) => {
+    setCurrentPage(page);
+    window.scrollTo(0, 0);
+  }, []);
+
+  const handleSelectSlot = useCallback((slot: Slot) => {
+    setSelectedSlot(slot);
+    navigateTo(Page.Reservation);
+  }, [navigateTo]);
+
+  const renderPage = () => {
+    switch (currentPage) {
+      case Page.Landing:
+        return <LandingPage onEnter={() => navigateTo(Page.Slots)} />;
+      case Page.Slots:
+        return <SlotsAvailablePage onSelectSlot={handleSelectSlot} />;
+      case Page.Reservation:
+        return selectedSlot ? (
+          <SlotReservationPage slot={selectedSlot} onBack={() => navigateTo(Page.Slots)} />
+        ) : (
+          <SlotsAvailablePage onSelectSlot={handleSelectSlot} />
+        );
+      case Page.Profile:
+        return <LegacyProfilePage />;
+      case Page.Dashboard:
+        return <DashboardPage />;
+      case Page.AllSlots:
+        return <AllSlotsPage />;
+      default:
+        return <LandingPage onEnter={() => navigateTo(Page.Slots)} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] text-[#F5F5F0] flex flex-col font-inter">
+      <AutoExpireReservations />
+      <Header navigateTo={navigateTo} currentPage={currentPage} />
+      <main className="flex-grow">
+        {renderPage()}
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: app/test-api/page.tsx
+================================================================================
+
+'use client';
+
+import { useState } from 'react';
+
+export default function TestApiPage() {
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const testExpireReservations = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/slots/expire-reservations', {
+        method: 'POST'
+      });
+      const data = await response.json();
+      setResult(data);
+    } catch (error) {
+      setResult({ error: 'Failed to call API', details: error });
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] text-white p-8">
+      <h1 className="text-4xl font-bold mb-8">API Testing Page</h1>
+      
+      <div className="space-y-4">
+        <button
+          onClick={testExpireReservations}
+          disabled={loading}
+          className="bg-[#D4AF37] text-black px-6 py-3 rounded-md font-bold hover:bg-yellow-300 disabled:opacity-50"
+        >
+          {loading ? 'Testing...' : 'Test Expire Reservations API'}
+        </button>
+
+        {result && (
+          <div className="bg-[#1A1A1A] p-6 rounded-lg mt-6">
+            <h2 className="text-xl font-bold mb-4">Result:</h2>
+            <pre className="text-sm overflow-auto">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: clean-test-data.sql
+================================================================================
+
+-- ===============================================
+-- SCRIPT DE NETTOYAGE DES DONNÉES DE TEST
+-- ===============================================
+
+-- 1. Réinitialiser tous les slots "sold" en "locked"
+-- (Les slots 201+ doivent être locked, seuls les 200 premiers disponibles)
+UPDATE slots
+SET status = 'locked', reserved_until = NULL, updated_at = NOW()
+WHERE status = 'sold' AND id > 200;
+
+-- 2. Pour les slots 1-200 qui sont sold, les remettre en available
+UPDATE slots
+SET status = 'available', reserved_until = NULL, updated_at = NOW()
+WHERE status = 'sold' AND id <= 200;
+
+-- 3. Supprimer toutes les legacies de test
+DELETE FROM timeline_events WHERE legacy_id IN (SELECT id FROM legacies);
+DELETE FROM media WHERE legacy_id IN (SELECT id FROM legacies);
+DELETE FROM payments;
+DELETE FROM legacies;
+
+-- 4. Vérifier l'état final
+SELECT
+  status,
+  COUNT(*) as count
+FROM slots
+GROUP BY status
+ORDER BY status;
+
+
+
+================================================================================
+FILE: components/AuthModal.tsx
+================================================================================
+
+'use client';
+import React from 'react';
+
+interface AuthModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onLogin: () => void;
+}
+
+const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLogin }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Overlay */}
+      <div 
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      ></div>
+
+      {/* Modal */}
+      <div className="relative bg-[#1A1A1A] border-2 border-[#D4AF37] rounded-lg p-8 max-w-md w-full mx-4 shadow-2xl animate-[fadeInZoom_0.3s_ease-out]">
+        <div className="text-center">
+          {/* Icon */}
+          <div className="w-16 h-16 bg-[#D4AF37]/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg 
+              className="w-8 h-8 text-[#D4AF37]" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2} 
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" 
+              />
+            </svg>
+          </div>
+
+          {/* Title */}
+          <h2 className="text-2xl font-playfair font-bold text-[#F5F5F0] mb-3">
+            Authentication Required
+          </h2>
+
+          {/* Message */}
+          <p className="text-gray-300 mb-6">
+            You must be logged in to reserve a slot. Please sign in to continue securing your legacy.
+          </p>
+
+          {/* Buttons */}
+          <div className="flex gap-4">
+            <button
+              onClick={onClose}
+              className="flex-1 px-6 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-md font-medium transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onLogin}
+              className="flex-1 px-6 py-3 bg-[#D4AF37] hover:bg-yellow-300 text-[#0A0A0A] rounded-md font-bold transition-colors"
+            >
+              Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AuthModal;
+
+
+================================================================================
+FILE: components/AutoExpireReservations.tsx
+================================================================================
+
+'use client';
+
+import { useEffect } from 'react';
+
+export default function AutoExpireReservations() {
+  useEffect(() => {
+    const expireReservations = async () => {
+      try {
+        const response = await fetch('/api/slots/expire-reservations', {
+          method: 'POST'
+        });
+        const data = await response.json();
+        if (data.expiredCount > 0) {
+          console.log(`✅ Auto-expired ${data.expiredCount} slot(s):`, data.expiredSlotIds);
+        }
+      } catch (error) {
+        console.error('Failed to auto-expire reservations:', error);
+      }
+    };
+
+    // Appeler immédiatement au chargement
+    expireReservations();
+
+    // Puis toutes les 30 secondes
+    const interval = setInterval(expireReservations, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return null; // Ce composant ne rend rien visuellement
+}
+
+
+================================================================================
+FILE: components/CountdownTimer.tsx
+================================================================================
+
+
+import React, { useState, useEffect } from 'react';
+
+interface CountdownTimerProps {
+  targetDate: Date;
+}
+
+const CountdownTimer: React.FC<CountdownTimerProps> = ({ targetDate }) => {
+  const calculateTimeLeft = () => {
+    const difference = +targetDate - +new Date();
+    let timeLeft = {
+      days: 0,
+      hours: 0,
+      minutes: 0,
+      seconds: 0,
+    };
+
+    if (difference > 0) {
+      timeLeft = {
+        days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((difference / 1000 / 60) % 60),
+        seconds: Math.floor((difference / 1000) % 60),
+      };
+    }
+    return timeLeft;
+  };
+
+  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  });
+
+  const formatTimeUnit = (unit: number) => unit.toString().padStart(2, '0');
+
+  const timeComponents = [
+    { label: 'Days', value: formatTimeUnit(timeLeft.days) },
+    { label: 'Hours', value: formatTimeUnit(timeLeft.hours) },
+    { label: 'Minutes', value: formatTimeUnit(timeLeft.minutes) },
+    { label: 'Seconds', value: formatTimeUnit(timeLeft.seconds) },
+  ];
+
+  return (
+    <div className="flex justify-center items-center space-x-4 md:space-x-8">
+      {timeComponents.map((component, index) => (
+        <div key={component.label} className="flex items-center">
+          <div className="text-center">
+            <div className="text-4xl md:text-6xl lg:text-7xl font-mono font-bold text-[#F5F5F0]">
+              {component.value}
+            </div>
+            <div className="text-xs md:text-sm uppercase tracking-widest text-[#D4AF37]/80">
+              {component.label}
+            </div>
+          </div>
+          {index < timeComponents.length - 1 && <div className="text-4xl md:text-6xl text-[#D4AF37]/50 mx-2 md:mx-4">:</div>}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default CountdownTimer;
+
+
+
+================================================================================
+FILE: components/FileUpload.tsx
+================================================================================
+
+'use client';
+import React, { useState } from 'react';
+import { createClient } from '@/lib/supabase-browser';
+
+interface FileUploadProps {
+  onUploadComplete: (urls: string[]) => void;
+  maxFiles?: number;
+  existingFiles?: string[];
+}
+
+const FileUpload: React.FC<FileUploadProps> = ({ 
+  onUploadComplete, 
+  maxFiles = 10,
+  existingFiles = [] 
+}) => {
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>(existingFiles);
+  const [error, setError] = useState('');
+  const supabase = createClient();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // Vérifier le nombre total de fichiers
+    if (uploadedFiles.length + files.length > maxFiles) {
+      setError(`Maximum ${maxFiles} photos allowed`);
+      return;
+    }
+
+    setUploading(true);
+    setError('');
+
+    const newUrls: string[] = [];
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+
+        // Validation de taille (max 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          setError(`${file.name} is too large (max 10MB)`);
+          continue;
+        }
+
+        // Validation de type
+        if (!file.type.startsWith('image/')) {
+          setError(`${file.name} is not an image`);
+          continue;
+        }
+
+        // Créer un nom de fichier unique
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        // Upload vers Supabase Storage
+        const { data, error: uploadError } = await supabase.storage
+          .from('legacy-photos')
+          .upload(filePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          setError(`Failed to upload ${file.name}`);
+          continue;
+        }
+
+        // Obtenir l'URL publique
+        const { data: { publicUrl } } = supabase.storage
+          .from('legacy-photos')
+          .getPublicUrl(filePath);
+
+        newUrls.push(publicUrl);
+      }
+
+      // Mettre à jour la liste des fichiers uploadés
+      const updatedFiles = [...uploadedFiles, ...newUrls];
+      setUploadedFiles(updatedFiles);
+      onUploadComplete(updatedFiles);
+
+    } catch (err) {
+      console.error('Upload error:', err);
+      setError('An unexpected error occurred');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveFile = (urlToRemove: string) => {
+    const updatedFiles = uploadedFiles.filter(url => url !== urlToRemove);
+    setUploadedFiles(updatedFiles);
+    onUploadComplete(updatedFiles);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Upload Button */}
+      <div className="flex items-center gap-4">
+        <label className="cursor-pointer bg-[#D4AF37] text-[#0A0A0A] px-6 py-3 rounded-md font-bold hover:bg-yellow-300 transition-colors inline-flex items-center gap-2">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          {uploading ? 'Uploading...' : 'Upload Photos'}
+          <input
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={handleFileChange}
+            disabled={uploading || uploadedFiles.length >= maxFiles}
+            className="hidden"
+          />
+        </label>
+        <span className="text-sm text-gray-400">
+          {uploadedFiles.length} / {maxFiles} photos
+        </span>
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 rounded-md text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Preview Grid */}
+      {uploadedFiles.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {uploadedFiles.map((url, index) => (
+            <div key={index} className="relative group">
+              <img
+                src={url}
+                alt={`Upload ${index + 1}`}
+                className="w-full h-32 object-cover rounded-md border border-[#D4AF37]/30"
+              />
+              <button
+                onClick={() => handleRemoveFile(url)}
+                className="absolute top-2 right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Info */}
+      <p className="text-xs text-gray-500">
+        Accepted formats: JPG, PNG, GIF, WEBP • Max size: 10MB per photo
+      </p>
+    </div>
+  );
+};
+
+export default FileUpload;
+
+
+================================================================================
+FILE: components/Footer.tsx
+================================================================================
+
+
+import React from 'react';
+
+const Footer: React.FC = () => {
+  return (
+    <footer className="py-8 px-4 sm:px-8 md:px-12 mt-16 border-t border-[#D4AF37]/20">
+      <div className="container mx-auto text-center text-xs text-gray-400">
+        <p className="font-playfair text-lg text-[#D4AF37] mb-2">LEGACY VAULT</p>
+        <p>&copy; {new Date().getFullYear()} Legacy Vault Inc. All rights reserved.</p>
+        <p className="mt-2">A permanent record for a fleeting existence.</p>
+        <div className="flex justify-center space-x-4 mt-4">
+            <a href="#" className="hover:text-[#D4AF37]">Terms of Service</a>
+            <span>|</span>
+            <a href="#" className="hover:text-[#D4AF37]">Privacy Policy</a>
+        </div>
+      </div>
+    </footer>
+  );
+};
+
+export default Footer;
+
+
+
+================================================================================
+FILE: components/Header.tsx
+================================================================================
+
+'use client';
+import React, { useEffect, useState } from 'react';
+import { Page } from '../types';
+import { createClient } from '@/lib/supabase-browser';
+import { User } from '@supabase/supabase-js';
+import { useRouter } from 'next/navigation';
+
+interface HeaderProps {
+  navigateTo: (page: Page) => void;
+  currentPage: Page;
+}
+
+const Header: React.FC<HeaderProps> = ({ navigateTo, currentPage }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+  const router = useRouter();
+  const isCountdownPhase = currentPage === Page.Landing;
+
+  useEffect(() => {
+    // Récupérer l'utilisateur actuel
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      setLoading(false);
+    });
+
+    // Écouter les changements d'authentification
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase.auth]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/');
+    router.refresh();
+  };
+
+  return (
+    <header className="py-6 px-4 sm:px-8 md:px-12 sticky top-0 z-50 bg-[#0A0A0A]/80 backdrop-blur-sm">
+      <div className="container mx-auto flex justify-between items-center">
+        <div
+          className="text-3xl font-playfair font-bold text-[#D4AF37] cursor-pointer transition-all duration-300 hover:text-yellow-300 hover:scale-105"
+          style={{ textShadow: '0 0 8px rgba(212, 175, 55, 0.5)' }}
+          onClick={() => navigateTo(Page.Landing)}
+        >
+          LV
+        </div>
+
+        {!isCountdownPhase && (
+          <nav className="hidden md:flex items-center space-x-8 text-sm font-medium tracking-wider">
+            <button
+              onClick={() => navigateTo(Page.Slots)}
+              className="cursor-pointer text-[#F5F5F0] hover:text-[#D4AF37] transition-colors bg-transparent border-none"
+            >
+              THE SLOTS
+            </button>
+            <button
+              onClick={() => navigateTo(Page.Profile)}
+              className="cursor-pointer text-[#F5F5F0] hover:text-[#D4AF37] transition-colors bg-transparent border-none"
+            >
+              LEGACY GALLERY
+            </button>
+            <button
+              onClick={() => navigateTo(Page.Dashboard)}
+              className="cursor-pointer text-[#F5F5F0] hover:text-[#D4AF37] transition-colors bg-transparent border-none"
+            >
+              DASHBOARD
+            </button>
+            <button
+              onClick={() => navigateTo(Page.AllSlots)}
+              className="cursor-pointer text-[#F5F5F0] hover:text-[#D4AF37] transition-colors bg-transparent border-none"
+            >
+              FULL SLOTS
+            </button>
+          </nav>
+        )}
+
+        <div className="flex items-center gap-4">
+          {loading ? (
+            <div className="w-8 h-8 border-2 border-[#D4AF37] border-t-transparent rounded-full animate-spin"></div>
+          ) : user ? (
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-gray-400 hidden md:inline">
+                {user.email}
+              </span>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md text-sm font-medium transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => router.push('/auth/login')}
+              className="px-4 py-2 bg-[#D4AF37] text-[#0A0A0A] rounded-md text-sm font-bold hover:bg-yellow-300 transition-colors"
+            >
+              Login
+            </button>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+
+
+================================================================================
+FILE: components/Pagination.tsx
+================================================================================
+
+import React from 'react';
+import { ChevronLeftIcon } from './icons/ChevronLeftIcon';
+import { ChevronRightIcon } from './icons/ChevronRightIcon';
+
+interface PaginationProps {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}
+
+const Pagination: React.FC<PaginationProps> = ({ currentPage, totalPages, onPageChange }) => {
+  const handlePrev = () => {
+    if (currentPage > 1) {
+      onPageChange(currentPage - 1);
+    }
+  };
+
+  const handleNext = () => {
+    if (currentPage < totalPages) {
+      onPageChange(currentPage + 1);
+    }
+  };
+
+  const renderPageNumbers = () => {
+    const pages = [];
+    const maxPagesToShow = 5;
+    let startPage: number, endPage: number;
+
+    if (totalPages <= maxPagesToShow) {
+      startPage = 1;
+      endPage = totalPages;
+    } else {
+      const maxPagesBeforeCurrentPage = Math.floor(maxPagesToShow / 2);
+      const maxPagesAfterCurrentPage = Math.ceil(maxPagesToShow / 2) - 1;
+      if (currentPage <= maxPagesBeforeCurrentPage) {
+        startPage = 1;
+        endPage = maxPagesToShow;
+      } else if (currentPage + maxPagesAfterCurrentPage >= totalPages) {
+        startPage = totalPages - maxPagesToShow + 1;
+        endPage = totalPages;
+      } else {
+        startPage = currentPage - maxPagesBeforeCurrentPage;
+        endPage = currentPage + maxPagesAfterCurrentPage;
+      }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(
+        <button
+          key={i}
+          onClick={() => onPageChange(i)}
+          className={`h-10 w-10 flex items-center justify-center rounded-md font-medium text-sm transition-colors ${
+            currentPage === i 
+              ? 'bg-[#D4AF37] text-[#0A0A0A]' 
+              : 'bg-[#1A1A1A] text-[#F5F5F0] hover:bg-[#D4AF37]/20'
+          }`}
+        >
+          {i}
+        </button>
+      );
+    }
+    return pages;
+  };
+
+  return (
+    <nav className="flex items-center justify-center space-x-2 mt-12">
+      <button
+        onClick={handlePrev}
+        disabled={currentPage === 1}
+        className="h-10 w-10 flex items-center justify-center rounded-md bg-[#1A1A1A] text-[#F5F5F0] disabled:text-gray-600 disabled:cursor-not-allowed hover:bg-[#D4AF37]/20 transition-colors"
+      >
+        <ChevronLeftIcon className="w-5 h-5" />
+      </button>
+      
+      {currentPage > 3 && totalPages > 5 && (
+        <>
+          <button 
+            onClick={() => onPageChange(1)} 
+            className="h-10 w-10 flex items-center justify-center rounded-md bg-[#1A1A1A] text-[#F5F5F0] hover:bg-[#D4AF37]/20 transition-colors text-sm"
+          >
+            1
+          </button>
+          <span className="text-gray-500">...</span>
+        </>
+      )}
+
+      {renderPageNumbers()}
+
+      {currentPage < totalPages - 2 && totalPages > 5 && (
+        <>
+          <span className="text-gray-500">...</span>
+          <button 
+            onClick={() => onPageChange(totalPages)} 
+            className="h-10 w-10 flex items-center justify-center rounded-md bg-[#1A1A1A] text-[#F5F5F0] hover:bg-[#D4AF37]/20 transition-colors text-sm"
+          >
+            {totalPages}
+          </button>
+        </>
+      )}
+
+      <button
+        onClick={handleNext}
+        disabled={currentPage === totalPages}
+        className="h-10 w-10 flex items-center justify-center rounded-md bg-[#1A1A1A] text-[#F5F5F0] disabled:text-gray-600 disabled:cursor-not-allowed hover:bg-[#D4AF37]/20 transition-colors"
+      >
+        <ChevronRightIcon className="w-5 h-5" />
+      </button>
+    </nav>
+  );
+};
+
+export default Pagination;
+
+
+================================================================================
+FILE: components/PhotoLightbox.tsx
+================================================================================
+
+'use client';
+import React, { useEffect } from 'react';
+
+interface PhotoLightboxProps {
+  photos: { id: string; url: string; title?: string | null }[];
+  currentIndex: number;
+  onClose: () => void;
+  onNext: () => void;
+  onPrev: () => void;
+}
+
+const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
+  photos,
+  currentIndex,
+  onClose,
+  onNext,
+  onPrev,
+}) => {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowRight') onNext();
+      if (e.key === 'ArrowLeft') onPrev();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, onNext, onPrev]);
+
+  if (!photos[currentIndex]) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm">
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
+      >
+        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      {/* Previous button */}
+      {currentIndex > 0 && (
+        <button
+          onClick={onPrev}
+          className="absolute left-4 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      )}
+
+      {/* Next button */}
+      {currentIndex < photos.length - 1 && (
+        <button
+          onClick={onNext}
+          className="absolute right-4 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+
+      {/* Image */}
+      <div className="relative max-w-7xl max-h-[90vh] px-4">
+        <img
+          src={photos[currentIndex].url}
+          alt={photos[currentIndex].title || `Photo ${currentIndex + 1}`}
+          className="max-w-full max-h-[90vh] object-contain rounded-lg"
+        />
+
+        {/* Counter */}
+        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-full text-sm">
+          {currentIndex + 1} / {photos.length}
+        </div>
+      </div>
+
+      {/* Click outside to close */}
+      <div
+        className="absolute inset-0 -z-10"
+        onClick={onClose}
+      />
+    </div>
+  );
+};
+
+export default PhotoLightbox;
+
+
+================================================================================
+FILE: components/ProgressBar.tsx
+================================================================================
+
+import React from 'react';
+
+interface ProgressBarProps {
+  value: number;
+  max: number;
+  label: string;
+}
+
+const ProgressBar: React.FC<ProgressBarProps> = ({ value, max, label }) => {
+  const percentage = (value / max) * 100;
+
+  return (
+    <div className="w-full max-w-md mx-auto">
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-sm font-medium text-[#e0e0e0] uppercase tracking-wider">{label}</span>
+        <span className="text-sm font-bold font-mono text-[#D4AF37]">{value.toLocaleString()} / {max.toLocaleString()}</span>
+      </div>
+      <div className="w-full bg-[#1A1A1A] rounded-full h-2.5 border border-[#D4AF37]/20">
+        <div 
+          className="bg-[#D4AF37] h-2 rounded-full transition-all duration-500 ease-out" 
+          style={{ width: `${percentage}%`, boxShadow: '0 0 8px #d4af37' }}
+        ></div>
+      </div>
+    </div>
+  );
+};
+
+export default ProgressBar;
+
+
+
+================================================================================
+FILE: components/SlotCard.tsx
+================================================================================
+
+import React from 'react';
+import { Slot, SlotStatus } from '../types';
+
+interface SlotCardProps {
+  slot: Slot;
+  onSelect: (slot: Slot) => void;
+  onRelease?: (slotId: number) => void;
+}
+
+const SlotCard: React.FC<SlotCardProps> = ({ slot, onSelect, onRelease }) => {
+  const getStatusConfig = () => {
+    switch (slot.status) {
+      case SlotStatus.Available:
+        return {
+          bgClass: 'bg-[#141414] border-green-500/30 hover:border-green-500/70',
+          badgeClass: 'bg-green-900/50 text-green-400 border-green-500/50',
+          badgeText: 'AVAILABLE',
+          priceClass: 'text-green-400',
+          buttonClass: 'bg-green-500/10 text-green-400 border-green-500/50 hover:bg-green-500 hover:text-black',
+          buttonText: 'Reserve Slot',
+          glowClass: 'group-hover:border-green-500',
+          clickable: true,
+        };
+      case SlotStatus.Reserved:
+        return {
+          bgClass: 'bg-[#141414] border-yellow-500/30',
+          badgeClass: 'bg-yellow-900/50 text-yellow-400 border-yellow-500/50',
+          badgeText: 'RESERVED',
+          priceClass: 'text-yellow-400',
+          buttonClass: 'bg-yellow-900/50 text-yellow-400',
+          buttonText: onRelease ? 'Release' : 'Reserved',
+          glowClass: '',
+          clickable: !!onRelease,
+        };
+      case SlotStatus.Sold:
+        return {
+          bgClass: 'bg-[#111111] border-red-500/30 opacity-70',
+          badgeClass: 'bg-red-900/50 text-red-400 border-red-500/50',
+          badgeText: 'SOLD',
+          priceClass: 'text-red-400 line-through',
+          buttonClass: 'bg-red-900/50 text-red-400 cursor-not-allowed',
+          buttonText: 'Sold Out',
+          glowClass: '',
+          clickable: false,
+        };
+      case SlotStatus.Locked:
+        return {
+          bgClass: 'bg-[#0a0a0a] border-gray-500/30 opacity-60',
+          badgeClass: 'bg-gray-900/50 text-gray-400 border-gray-500/50',
+          badgeText: 'LOCKED',
+          priceClass: 'text-gray-400',
+          buttonClass: 'bg-gray-900/50 text-gray-400 cursor-not-allowed',
+          buttonText: 'Coming Soon',
+          glowClass: '',
+          clickable: false,
+        };
+      default:
+        return {
+          bgClass: 'bg-[#111111] border-gray-800/50',
+          badgeClass: 'bg-gray-900/50 text-gray-400 border-gray-500/50',
+          badgeText: 'UNKNOWN',
+          priceClass: 'text-gray-400',
+          buttonClass: 'bg-gray-900/50 text-gray-400',
+          buttonText: 'Unknown',
+          glowClass: '',
+          clickable: false,
+        };
+    }
+  };
+
+  const config = getStatusConfig();
+
+  const handleClick = () => {
+    if (config.clickable) {
+      if (slot.status === SlotStatus.Reserved && onRelease) {
+        onRelease(slot.id);
+      } else if (slot.status === SlotStatus.Available) {
+        onSelect(slot);
+      }
+    }
+  };
+
+  const cardClasses = `
+    border rounded-lg p-4 flex flex-col justify-between transition-all duration-300 
+    transform group relative overflow-hidden
+    ${config.bgClass}
+    ${config.clickable ? 'hover:-translate-y-2 hover:shadow-2xl cursor-pointer' : 'cursor-not-allowed'}
+  `;
+
+  return (
+    <div 
+      className={cardClasses} 
+      onClick={handleClick}
+      role={config.clickable ? "button" : "listitem"} 
+      aria-label={`Slot number ${slot.id}`}
+    >
+      <div className={`absolute top-0 left-0 w-full h-full border-2 border-transparent ${config.glowClass} rounded-lg transition-all duration-300 opacity-0 group-hover:opacity-100 scale-95 group-hover:scale-100`}></div>
+      
+      <div className="relative z-10">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-mono text-lg text-[#e0e0e0]">
+            SLOT #{String(slot.id).padStart(5, '0')}
+          </h3>
+          <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${config.badgeClass}`}>
+            {config.badgeText}
+          </span>
+        </div>
+        
+        {/* ✅ Correction du prix */}
+        <p className={`text-3xl font-semibold font-playfair ${config.priceClass}`}>
+          €{(slot.price / 100).toLocaleString('fr-FR')}
+        </p>
+
+        {slot.status === SlotStatus.Reserved && slot.reservedUntil && (
+          <p className="text-xs text-yellow-400 mt-2">
+            Expires: {new Date(slot.reservedUntil).toLocaleTimeString()}
+          </p>
+        )}
+      </div>
+
+      <div className="relative z-10 mt-6">
+        <button
+          tabIndex={-1}
+          disabled={!config.clickable}
+          className={`w-full font-bold py-2 rounded-md transition-colors duration-300 ${config.buttonClass}`}
+        >
+          {config.buttonText}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default SlotCard;
+
+
+================================================================================
+FILE: components/TimelineEditor.tsx
+================================================================================
+
+'use client';
+import React, { useState, useRef, KeyboardEvent } from 'react';
+
+export interface TimelineEvent {
+  date: string;
+  text: string;
+}
+
+interface TimelineEditorProps {
+  events: TimelineEvent[];
+  onChange: (events: TimelineEvent[]) => void;
+}
+
+const TimelineEditor: React.FC<TimelineEditorProps> = ({ events, onChange }) => {
+  const maxEvents = 12;
+  const maxWords = 30;
+  const [currentDate, setCurrentDate] = useState('');
+  const [currentText, setCurrentText] = useState('');
+  const textInputRef = useRef<HTMLInputElement>(null);
+
+  const countWords = (text: string): number => {
+    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+  };
+
+  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && currentText.trim() && events.length < maxEvents) {
+      const wordCount = countWords(currentText);
+      if (wordCount <= maxWords) {
+        onChange([...events, { date: currentDate.trim(), text: currentText.trim() }]);
+        setCurrentDate('');
+        setCurrentText('');
+      }
+    }
+  };
+
+  const removeEvent = (index: number) => {
+    const newEvents = events.filter((_, i) => i !== index);
+    onChange(newEvents);
+  };
+
+  const currentWordCount = countWords(currentText);
+  const isOverLimit = currentWordCount > maxWords;
+
+  return (
+    <div className="space-y-6">
+      <label className="block text-sm font-medium text-gray-300">
+        Timeline (max {maxEvents} events)
+      </label>
+
+      {/* Timeline verticale */}
+      <div className="relative">
+        {/* Ligne verticale de la timeline */}
+        {events.length > 0 && (
+          <div className="absolute left-20 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30"></div>
+        )}
+
+        {/* Events existants */}
+        <div className="space-y-6">
+          {events.map((event, index) => (
+            <div key={index} className="relative flex items-start gap-4 group">
+              {/* Date à gauche */}
+              <div className="w-16 flex-shrink-0 text-right">
+                <span className="text-[#D4AF37] text-sm font-bold">
+                  {event.date || '—'}
+                </span>
+              </div>
+
+              {/* Flèche / Point */}
+              <div className="relative flex items-center justify-center w-8 flex-shrink-0">
+                <div className="w-3 h-3 rounded-full bg-[#D4AF37] border-4 border-[#0A0A0A] z-10"></div>
+                <svg
+                  className="absolute left-3 w-4 h-4 text-[#D4AF37]"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" />
+                </svg>
+              </div>
+
+              {/* Texte à droite */}
+              <div className="flex-1 bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-3 group-hover:border-[#D4AF37]/40 transition-colors">
+                <p className="text-gray-300 text-sm">{event.text}</p>
+              </div>
+
+              {/* Bouton supprimer */}
+              <button
+                type="button"
+                onClick={() => removeEvent(index)}
+                className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 transition-all"
+                title="Remove event"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Input pour nouvel event */}
+        {events.length < maxEvents && (
+          <div className="relative flex items-start gap-4 mt-6">
+            {/* Input date */}
+            <input
+              type="text"
+              value={currentDate}
+              onChange={(e) => setCurrentDate(e.target.value)}
+              placeholder="Year"
+              className="w-16 flex-shrink-0 text-right bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-md p-2 text-sm focus:ring-1 focus:ring-[#D4AF37] focus:outline-none"
+            />
+
+            {/* Flèche / Point */}
+            <div className="relative flex items-center justify-center w-8 flex-shrink-0">
+              <div className="w-3 h-3 rounded-full bg-gray-600 border-4 border-[#0A0A0A] z-10"></div>
+              <svg
+                className="absolute left-3 w-4 h-4 text-gray-600"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" />
+              </svg>
+            </div>
+
+            {/* Input texte */}
+            <div className="flex-1">
+              <input
+                ref={textInputRef}
+                type="text"
+                value={currentText}
+                onChange={(e) => setCurrentText(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Describe the event... (Press Enter to add)"
+                disabled={isOverLimit}
+                className="w-full bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-md p-3 text-sm focus:ring-1 focus:ring-[#D4AF37] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {currentText && (
+                <p className={`text-xs mt-1 ${isOverLimit ? 'text-red-400' : 'text-gray-500'}`}>
+                  {currentWordCount} / {maxWords} words {isOverLimit && '(Too many!)'}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {events.length >= maxEvents && (
+          <p className="text-center text-sm text-gray-500 mt-4">
+            Maximum de {maxEvents} events atteint
+          </p>
+        )}
+      </div>
+
+      {events.length === 0 && (
+        <div className="text-center py-8 text-gray-500 text-sm border border-dashed border-gray-700 rounded-lg">
+          Aucun événement dans la timeline. Commencez à ajouter des moments importants !
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default TimelineEditor;
+
+
+
+================================================================================
+FILE: components/icons/CheckCircleIcon.tsx
+================================================================================
+
+
+import React from 'react';
+
+export const CheckCircleIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+
+
+================================================================================
+FILE: components/icons/ChevronDownIcon.tsx
+================================================================================
+
+import React from 'react';
+
+export const ChevronDownIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+  </svg>
+);
+
+
+
+================================================================================
+FILE: components/icons/ChevronLeftIcon.tsx
+================================================================================
+
+
+import React from 'react';
+
+export const ChevronLeftIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+  </svg>
+);
+
+
+
+================================================================================
+FILE: components/icons/ChevronRightIcon.tsx
+================================================================================
+
+
+import React from 'react';
+
+export const ChevronRightIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+  </svg>
+);
+
+
+
+================================================================================
+FILE: components/icons/UploadIcon.tsx
+================================================================================
+
+
+import React from 'react';
+
+export const UploadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+  </svg>
+);
+
+
+
+================================================================================
+FILE: constants/index.ts
+================================================================================
+
+import { Slot, SlotStatus, Profile, TimelineEvent } from '@/types';
+
+export const TOTAL_SLOTS = 10000;
+export const INITIAL_PRICE = 5000;
+export const PRICE_INCREMENT = 50;
+export const LAUNCH_DATE = new Date('2025-12-31T23:59:59');
+
+// SEULEMENT 30 SLOTS DISPONIBLES pour les tests
+export const AVAILABLE_SLOTS_COUNT = 30;
+
+export const generateMockSlots = (): Slot[] => {
+  const slots: Slot[] = [];
+  let currentPrice = INITIAL_PRICE;
+  
+  for (let i = 1; i <= TOTAL_SLOTS; i++) {
+    let status: SlotStatus;
+    
+    if (i <= 30) {
+      status = SlotStatus.Available;     // Slots 1-30 : Disponibles
+    } else if (i <= 100) {
+      status = SlotStatus.Sold;          // Slots 31-100 : Vendus (exemples)
+    } else {
+      status = SlotStatus.Locked;        // Slots 101-10000 : Pas encore disponibles
+    }
+    
+    slots.push({
+      id: i,
+      price: currentPrice,
+      status: status,
+    });
+    
+    if (i % 2 === 0) {
+      currentPrice += PRICE_INCREMENT;
+    }
+  }
+  
+  return slots;
+};
+
+export const MOCK_PROFILE: Profile = {
+  slotId: 1,
+  fullName: "Eleonora Vance",
+  birthDate: "1888-03-15",
+  deathDate: "1972-07-20",
+  quote: "The future is a canvas, and memory is the paint.",
+  profileImage: "https://picsum.photos/seed/eleonora/400/400",
+  biography: "Eleonora Vance was a pioneering cartographer and explorer, known for her expeditions into uncharted territories of the Amazon rainforest in the early 20th century. Born in a small coastal town, she developed a fascination with maps and the unknown from a young age. Her work not only filled in vast blank spaces on world maps but also documented numerous new species of flora and fauna. Vance was a staunch advocate for conservation, long before it became a global movement. Her journals, filled with detailed sketches and vivid descriptions, are considered masterpieces of exploration literature and continue to inspire adventurers and scientists alike. Her legacy is one of courage, curiosity, and a profound respect for the natural world.",
+  gallery: [
+    "https://picsum.photos/seed/gallery1/800/600",
+    "https://picsum.photos/seed/gallery2/800/600",
+    "https://picsum.photos/seed/gallery3/800/600",
+    "https://picsum.photos/seed/gallery4/800/600",
+    "https://picsum.photos/seed/gallery5/800/600",
+    "https://picsum.photos/seed/gallery6/800/600",
+  ],
+  timeline: [
+    { year: 1888, title: "Born in Cornwall, England", description: "Eleonora was born to a family of lighthouse keepers, sparking her lifelong love for the sea and distant lands." },
+    { year: 1910, title: "First Expedition", description: "Embarked on her first major expedition to the Amazon, funded by a small inheritance and the Royal Geographical Society." },
+    { year: 1925, title: "Published 'The Green Labyrinth'", description: "Her first book detailing her discoveries became an international bestseller." },
+    { year: 1940, title: "War Efforts", description: "Served as a consultant for Allied forces, using her cartographical skills for strategic mapping." },
+    { year: 1965, title: "Established the Vance Foundation", description: "Founded an organization dedicated to preserving wilderness areas around the world." },
+    { year: 1972, title: "Passed Away", description: "Died peacefully at her home, leaving behind a legacy of exploration and conservation." },
+  ],
+};
+
+
+
+================================================================================
+FILE: eslint.config.mjs
+================================================================================
+
+import { dirname } from "path";
+import { fileURLToPath } from "url";
+import { FlatCompat } from "@eslint/eslintrc";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+});
+
+const eslintConfig = [
+  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    ignores: [
+      "node_modules/**",
+      ".next/**",
+      "out/**",
+      "build/**",
+      "next-env.d.ts",
+    ],
+  },
+];
+
+export default eslintConfig;
+
+
+
+================================================================================
+FILE: fix-prices.sql
+================================================================================
+
+-- ===============================================
+-- SCRIPT DE CORRECTION DES PRIX DES SLOTS
+-- Logique : +50€ tous les 2 slots
+-- Slot 1-2: 5000€ (500000 centimes)
+-- Slot 3-4: 5050€ (505000 centimes)
+-- Slot 5-6: 5100€ (510000 centimes)
+-- etc.
+-- ===============================================
+
+-- Mise à jour des prix pour tous les 10,000 slots
+UPDATE slots
+SET price = 500000 + (FLOOR((id - 1) / 2) * 5000)
+WHERE id >= 1 AND id <= 10000;
+
+-- Vérification : Afficher les 20 premiers slots
+SELECT id, price, price / 100 as price_in_euros, status
+FROM slots
+ORDER BY id
+LIMIT 20;
+
+
+
+================================================================================
+FILE: lib/stripe.ts
+================================================================================
+
+import Stripe from 'stripe';
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('STRIPE_SECRET_KEY is not defined in environment variables');
+}
+
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2025-09-30.clover',
+  typescript: true,
+});
+
+
+================================================================================
+FILE: lib/supabase-browser.ts
+================================================================================
+
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+
+
+================================================================================
+FILE: lib/supabase.ts
+================================================================================
+
+import { createClient } from '@supabase/supabase-js';
+
+// Clés publiques (safe pour le frontend)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+// Client public (pour le frontend)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Client admin (pour le backend - API routes seulement)
+export const supabaseAdmin = createClient(
+  supabaseUrl,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
+
+
+================================================================================
+FILE: middleware.ts
+================================================================================
+
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
+  })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          request.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          response.cookies.set({
+            name,
+            value,
+            ...options,
+          })
+        },
+        remove(name: string, options: any) {
+          request.cookies.set({
+            name,
+            value: '',
+            ...options,
+          })
+          response = NextResponse.next({
+            request: {
+              headers: request.headers,
+            },
+          })
+          response.cookies.set({
+            name,
+            value: '',
+            ...options,
+          })
+        },
+      },
+    }
+  )
+
+  await supabase.auth.getUser()
+
+  return response
+}
+
+export const config = {
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
+}
+
+
+================================================================================
+FILE: next.config.ts
+================================================================================
+
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+};
+
+export default nextConfig;
+
+
+
+================================================================================
+FILE: package.json
+================================================================================
+
+{
+  "name": "my-app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@stripe/stripe-js": "^8.2.0",
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/ssr": "^0.7.0",
+    "@supabase/supabase-js": "^2.75.0",
+    "next": "15.5.6",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "stripe": "^19.1.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4.1.14",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
+
+
+
+================================================================================
+FILE: pages-old/AllSlotsPage.tsx
+================================================================================
+
+import React, { useState, useMemo, useEffect } from 'react';
+import SlotCard from '../components/SlotCard';
+import Pagination from '../components/Pagination';
+import { TOTAL_SLOTS } from '../constants';
+import { Slot, SlotStatus } from '../types';
+import ProgressBar from '../components/ProgressBar';
+
+const SLOTS_PER_PAGE = 24; // Plus de slots par page pour la vue complète
+
+const AllSlotsPage: React.FC = () => {
+  const [allSlots, setAllSlots] = useState<Slot[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortOrder, setSortOrder] = useState('number_asc');
+  const [statusFilter, setStatusFilter] = useState('all');
+
+  // ✅ Charger tous les slots depuis l'API
+  useEffect(() => {
+    const fetchAllSlots = async () => {
+      try {
+        const response = await fetch('/api/slots/all');
+        const data = response.ok ? await response.json() : { success: false, error: 'Server error' };
+
+        if (data.success) {
+          setAllSlots(data.slots);
+        } else {
+          console.error('Failed to fetch all slots:', data.error);
+        }
+      } catch (error) {
+        console.error('Error fetching all slots:', error);
+      }
+    };
+
+    fetchAllSlots();
+
+    // Recharger toutes les 10 secondes pour garder les données à jour
+    const interval = setInterval(fetchAllSlots, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const filteredAndSortedSlots = useMemo(() => {
+    let filteredSlots = [...allSlots];
+
+    // Filtrer par statut
+    if (statusFilter !== 'all') {
+      filteredSlots = filteredSlots.filter(slot => slot.status === statusFilter);
+    }
+
+    // Trier
+    filteredSlots.sort((a, b) => {
+      switch (sortOrder) {
+        case 'price_asc': 
+          return a.price - b.price;
+        case 'price_desc': 
+          return b.price - a.price;
+        case 'number_desc': 
+          return b.id - a.id;
+        case 'number_asc':
+        default:
+          return a.id - b.id;
+      }
+    });
+
+    return filteredSlots;
+  }, [allSlots, sortOrder, statusFilter]);
+
+  const totalPages = Math.ceil(filteredAndSortedSlots.length / SLOTS_PER_PAGE);
+  const currentSlots = filteredAndSortedSlots.slice(
+    (currentPage - 1) * SLOTS_PER_PAGE,
+    currentPage * SLOTS_PER_PAGE
+  );
+  
+  const stats = useMemo(() => {
+    const available = allSlots.filter(s => s.status === SlotStatus.Available).length;
+    const reserved = allSlots.filter(s => s.status === SlotStatus.Reserved).length;
+    const sold = allSlots.filter(s => s.status === SlotStatus.Sold).length;
+    const locked = allSlots.filter(s => s.status === SlotStatus.Locked).length;
+    return { available, reserved, sold, locked };
+  }, [allSlots]);
+
+  // Dans AllSlotsPage, on ne permet pas d'acheter, seulement visualiser
+  const handleSelectSlot = (slot: Slot) => {
+  if (slot.status === SlotStatus.Available) {
+    alert('Pour réserver ce slot, veuillez aller sur la page "THE SLOTS".');
+  } else if (slot.status === SlotStatus.Locked) {
+    alert('Ce slot n\'est pas encore disponible. Il sera débloqué progressivement.');
+  } else if (slot.status === SlotStatus.Sold) {
+    alert('Ce slot a déjà été vendu.');
+  }
+  };
+
+
+  return (
+    <div className="container mx-auto px-4 py-12 animate-[fadeIn_1s_ease-out]">
+      <div className="text-center mb-12">
+        <h1 className="text-5xl md:text-6xl font-playfair font-black text-[#F5F5F0] tracking-wide">The Complete Vault</h1>
+        <p className="mt-4 text-lg text-gray-300 max-w-2xl mx-auto">
+          Explore all 10,000 legacy slots. Witness the scale of immortality.
+        </p>
+      </div>
+
+      {/* Stats Overview */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center border border-green-500/20">
+          <div className="text-2xl font-bold text-green-400">{stats.available}</div>
+          <div className="text-sm text-gray-400">Available</div>
+        </div>
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center border border-yellow-500/20">
+          <div className="text-2xl font-bold text-yellow-400">{stats.reserved}</div>
+          <div className="text-sm text-gray-400">Reserved</div>
+        </div>
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center border border-red-500/20">
+          <div className="text-2xl font-bold text-red-400">{stats.sold}</div>
+          <div className="text-sm text-gray-400">Sold</div>
+        </div>
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center border border-gray-500/20">
+          <div className="text-2xl font-bold text-gray-400">{stats.locked}</div>
+          <div className="text-sm text-gray-400">Locked</div>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-12">
+        <ProgressBar 
+          value={stats.available + stats.reserved + stats.sold} 
+          max={TOTAL_SLOTS} 
+          label="Total Slots Revealed" 
+        />
+      </div>
+
+      {/* Filtering & Sorting */}
+      <div className="bg-black/20 backdrop-blur-sm border border-white/10 p-4 rounded-lg mb-8 flex flex-wrap items-center justify-between gap-4 sticky top-[88px] z-40">
+        <div className="flex items-center gap-2">
+          <label htmlFor="sort" className="text-sm font-medium text-gray-400">Sort by:</label>
+          <select 
+            id="sort" 
+            value={sortOrder} 
+            onChange={(e) => setSortOrder(e.target.value)} 
+            className="bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-colors"
+          >
+            <option value="number_asc">Slot Number (Asc)</option>
+            <option value="number_desc">Slot Number (Desc)</option>
+            <option value="price_asc">Price (Low to High)</option>
+            <option value="price_desc">Price (High to Low)</option>
+          </select>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <label htmlFor="status" className="text-sm font-medium text-gray-400">Filter by status:</label>
+          <select 
+            id="status" 
+            value={statusFilter} 
+            onChange={(e) => setStatusFilter(e.target.value)} 
+            className="bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-colors"
+          >
+            <option value="all">All Slots</option>
+            <option value={SlotStatus.Available}>Available Only</option>
+            <option value={SlotStatus.Reserved}>Reserved Only</option>
+            <option value={SlotStatus.Sold}>Sold Only</option>
+            <option value={SlotStatus.Locked}>Locked Only</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Information Banner */}
+      <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-lg p-4 mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-playfair text-[#D4AF37] text-lg">Legend</h3>
+            <div className="flex flex-wrap gap-4 mt-2 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-green-500 rounded"></div>
+                <span className="text-gray-300">Available</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-yellow-500 rounded"></div>
+                <span className="text-gray-300">Reserved (1h)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-red-500 rounded"></div>
+                <span className="text-gray-300">Sold</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-gray-500 rounded"></div>
+                <span className="text-gray-300">Locked</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right text-sm text-gray-400">
+            <p>💡 <strong>Tip:</strong> Use filters to explore specific slot statuses</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Slots Grid Display */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+        {currentSlots.map(slot => (
+          <SlotCard 
+            key={slot.id} 
+            slot={slot} 
+            onSelect={handleSelectSlot}
+          />
+        ))}
+      </div>
+      
+      {filteredAndSortedSlots.length === 0 && (
+        <div className="text-center py-16 text-gray-400">No slots match your criteria.</div>
+      )}
+      
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <Pagination 
+          currentPage={currentPage} 
+          totalPages={totalPages} 
+          onPageChange={setCurrentPage} 
+        />
+      )}
+    </div>
+  );
+};
+
+export default AllSlotsPage;
+
+
+================================================================================
+FILE: pages-old/CountdownPage.tsx
+================================================================================
+
+import React from 'react';
+import CountdownTimer from '../components/CountdownTimer';
+
+const CountdownPage: React.FC = () => {
+  // Date de lancement : 15 mars 2025 à 12:00 CET
+  const launchDate = new Date('2025-10-15T12:00:00+01:00');
+
+  return (
+    <div 
+      className="min-h-screen flex flex-col items-center justify-center text-center p-8 bg-[#0A0A0A]"
+      style={{
+        backgroundImage: 'radial-gradient(circle at top, rgba(212, 175, 55, 0.1) 0%, transparent 50%)',
+      }}
+    >
+      {/* Logo/Titre */}
+      <div className="mb-12 animate-[fadeIn_1.5s_ease-out_forwards]">
+        <h1 className="text-6xl md:text-8xl lg:text-9xl font-black font-playfair text-[#D4AF37] tracking-widest uppercase mb-4">
+          LEGACY VAULT
+        </h1>
+        <p className="text-xl md:text-2xl font-light text-[#e0e0e0] tracking-wider mt-6">
+          Something is coming...
+        </p>
+      </div>
+
+      {/* Countdown */}
+      <div className="mb-12 animate-[fadeInZoom_1.5s_ease-out_forwards]">
+        <CountdownTimer targetDate={launchDate} />
+      </div>
+
+      {/* Email capture form */}
+      <div className="max-w-md mx-auto animate-[fadeIn_2s_ease-out_forwards]">
+        <p className="text-lg text-gray-400 mb-6">Get notified when we launch</p>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <input 
+            type="email" 
+            placeholder="Enter your email"
+            className="flex-1 bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]"
+          />
+          <button className="bg-[#D4AF37] text-[#0A0A0A] font-bold px-8 py-3 rounded-lg hover:bg-yellow-300 transition-colors">
+            NOTIFY ME
+          </button>
+        </div>
+      </div>
+
+      {/* Footer text */}
+      <div className="mt-16 animate-[fadeIn_2.5s_ease-out_forwards]">
+        <p className="text-sm text-gray-500 uppercase tracking-widest">
+          10,000 slots • Forever preserved
+        </p>
+      </div>
+    </div>
+  );
+};
+
+export default CountdownPage;
+
+
+================================================================================
+FILE: pages-old/DashboardPage.tsx
+================================================================================
+
+'use client';
+import React, { useEffect, useState } from 'react';
+import { createClient } from '@/lib/supabase-browser';
+import { User } from '@supabase/supabase-js';
+
+interface Legacy {
+  id: string;
+  slot_id: number;
+  full_name: string;
+  biography: string;
+  quote: string;
+  status: string;
+  created_at: string;
+  slots: {
+    id: number;  // ← C'est l'ID qui contient 1,2,3,4...
+    price: number;
+    status: string;
+  };
+  photos: {
+    id: string;
+    url: string;
+    title: string | null;
+    caption: string | null;
+  }[];
+  timeline_events?: {
+    id: string;
+    event_date: string;
+    event_text: string;
+    sort_order: number;
+  }[];
+}
+
+interface Stats {
+  totalSlots: number;
+  totalSpent: number;
+}
+
+const DashboardPage: React.FC = () => {
+  const [user, setUser] = useState<User | null>(null);
+  const [legacies, setLegacies] = useState<Legacy[]>([]);
+  const [stats, setStats] = useState<Stats>({ totalSlots: 0, totalSpent: 0 });
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      setUser(user);
+
+      try {
+        const response = await fetch(`/api/user/legacies?userId=${user.id}`);
+        const data = await response.json();
+
+        if (data.success) {
+          setLegacies(data.legacies);
+          setStats(data.stats);
+        }
+      } catch (error) {
+        console.error('Error fetching legacies:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 bg-[#D4AF37]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-playfair font-bold text-[#F5F5F0] mb-3">
+            Authentication Required
+          </h2>
+          <p className="text-gray-400 mb-6">
+            Please sign in to view your dashboard and manage your legacies.
+          </p>
+          <a
+            href="/auth/login"
+            className="inline-block bg-[#D4AF37] text-[#0A0A0A] px-8 py-3 rounded-md font-bold hover:bg-yellow-300 transition-colors"
+          >
+            Sign In
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] py-12 px-4 sm:px-8">
+      <div className="container mx-auto max-w-7xl">
+        {/* Header */}
+        <div className="mb-12">
+          <h1 className="text-4xl md:text-5xl font-playfair font-bold text-[#D4AF37] mb-2">
+            My Dashboard
+          </h1>
+          <p className="text-gray-400">Welcome back, {user.email}</p>
+        </div>
+
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+          <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-[#D4AF37]/20 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Total Slots Owned</p>
+                <p className="text-3xl font-bold text-[#F5F5F0]">{stats.totalSlots}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-[#D4AF37]/20 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Total Invested</p>
+                <p className="text-3xl font-bold text-[#F5F5F0]">
+                  {stats.totalSpent.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Legacies List */}
+        <div>
+          <h2 className="text-2xl font-playfair font-bold text-[#F5F5F0] mb-6">
+            Your Legacies
+          </h2>
+
+          {legacies.length === 0 ? (
+            <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-12 text-center">
+              <div className="w-16 h-16 bg-[#D4AF37]/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold text-[#F5F5F0] mb-2">No Legacies Yet</h3>
+              <p className="text-gray-400 mb-6">
+                You haven't secured any slots in the vault yet. Start preserving your legacy today!
+              </p>
+
+              <a
+                href="/"
+                className="inline-block bg-[#D4AF37] text-[#0A0A0A] px-6 py-3 rounded-md font-bold hover:bg-yellow-300 transition-colors"
+              >
+                Browse Available Slots
+              </a>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-6">
+              {legacies.map((legacy: Legacy) => (
+                <div
+                  key={legacy.id}
+                  className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-6 hover:border-[#D4AF37]/50 transition-colors"
+                >
+                  <div className="flex flex-col md:flex-row gap-6">
+
+                    {/* Photos */}
+                    <div className="w-full md:w-48 flex-shrink-0">
+                      {legacy.photos.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          {legacy.photos.slice(0, 4).map((photo, index) => (
+                            <img
+                              key={photo.id}
+                              src={photo.url}
+                              alt={photo.title || `Photo ${index + 1}`}
+                              className="w-full h-24 object-cover rounded-md"
+                            />
+                          ))}
+                          {legacy.photos.length > 4 && (
+                            <div className="w-full h-24 bg-[#0A0A0A] rounded-md flex items-center justify-center border border-[#D4AF37]/30">
+                              <span className="text-[#D4AF37] font-bold">
+                                +{legacy.photos.length - 4}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="w-full h-48 bg-[#0A0A0A] rounded-md flex items-center justify-center border border-[#D4AF37]/30">
+                          <svg className="w-12 h-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <h3 className="text-xl font-bold text-[#F5F5F0] mb-1">
+                            {legacy.full_name}
+                          </h3>
+                          <p className="text-sm text-[#D4AF37]">
+                             Slot #{legacy.slots.id}
+                          </p>
+                        </div>
+                        <span className="px-3 py-1 bg-green-500/20 text-green-400 text-xs font-medium rounded-full">
+                          {legacy.status}
+                        </span>
+                      </div>
+
+                      {legacy.quote && (
+                        <p className="text-gray-300 italic mb-3">
+                          "{legacy.quote}"
+                        </p>
+                      )}
+
+                      <p className="text-gray-400 text-sm line-clamp-3 mb-4">
+                        {legacy.biography}
+                      </p>
+
+                      {/* Timeline */}
+                      {legacy.timeline_events && legacy.timeline_events.length > 0 && (
+                        <div className="mb-4 p-3 bg-[#0A0A0A] rounded-lg border border-[#D4AF37]/20">
+                          <h4 className="text-xs font-bold text-[#D4AF37] mb-2">Timeline Events</h4>
+                          <div className="space-y-2">
+                            {legacy.timeline_events.slice(0, 3).map((event) => (
+                              <div key={event.id} className="flex gap-2 text-xs">
+                                <span className="text-[#D4AF37] font-bold min-w-[60px]">
+                                  {event.event_date}
+                                </span>
+                                <span className="text-gray-400 line-clamp-1">
+                                  {event.event_text}
+                                </span>
+                              </div>
+                            ))}
+                            {legacy.timeline_events.length > 3 && (
+                              <p className="text-xs text-gray-500 italic">
+                                +{legacy.timeline_events.length - 3} more events
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span>
+                          Created: {new Date(legacy.created_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })}
+                        </span>
+                        <span>•</span>
+                        <span>{legacy.photos.length} photo(s)</span>
+                        {legacy.timeline_events && legacy.timeline_events.length > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>{legacy.timeline_events.length} timeline event(s)</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+export default DashboardPage;
+
+
+
+================================================================================
+FILE: pages-old/LandingPage.tsx
+================================================================================
+
+import React from 'react';
+import { ChevronDownIcon } from '../components/icons/ChevronDownIcon';
+
+interface LandingPageProps {
+  onEnter: () => void;
+}
+
+const LandingPage: React.FC<LandingPageProps> = ({ onEnter }) => {
+  return (
+    <div 
+      className="min-h-[calc(100vh-88px)] flex flex-col items-center justify-center text-center p-4 relative overflow-hidden"
+      style={{
+        backgroundImage: 'radial-gradient(circle, rgba(26,26,26,0.9) 0%, #0A0A0A 80%), url(https://www.transparenttextures.com/patterns/subtle-marble.png)',
+      }}
+    >
+      <div className="max-w-4xl mx-auto animate-[fadeInZoom_1.5s_ease-out_forwards]">
+        <h1 className="text-5xl md:text-7xl lg:text-8xl font-black font-playfair text-[#D4AF37] tracking-widest uppercase">
+          Legacy Vault
+        </h1>
+        <h2 className="mt-6 text-xl md:text-2xl font-light text-[#e0e0e0] tracking-wider">
+          10,000 Slots. Infinite Memory.
+        </h2>
+        <p className="mt-4 max-w-2xl mx-auto text-base md:text-lg text-gray-400">
+          Some will be remembered. Most will be forgotten.
+        </p>
+
+        <div className="mt-12">
+          <button 
+            onClick={onEnter}
+            className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-[#0A0A0A] bg-[#D4AF37] rounded-md overflow-hidden transition-all duration-300 ease-in-out hover:shadow-[0_0_20px_#d4af37] hover:shadow-[#D4AF37]/50"
+          >
+            <span className="absolute inset-0 w-full h-full bg-gradient-to-br from-yellow-300 to-[#D4AF37] opacity-0 group-hover:opacity-100 transition-opacity duration-300"></span>
+            <span className="relative">Explore The Vault</span>
+          </button>
+        </div>
+      </div>
+       <div 
+        onClick={onEnter} 
+        className="absolute bottom-10 animate-bounce cursor-pointer"
+        aria-label="Scroll to slots"
+      >
+        <ChevronDownIcon className="w-8 h-8 text-[#D4AF37]/50" />
+      </div>
+    </div>
+  );
+};
+
+export default LandingPage;
+
+
+================================================================================
+FILE: pages-old/LegacyProfilePage.tsx
+================================================================================
+
+'use client';
+import React, { useEffect, useState } from 'react';
+import PhotoLightbox from '../components/PhotoLightbox';
+
+interface Legacy {
+  id: string;
+  slot_id: number;
+  full_name: string;
+  biography: string;
+  quote: string;
+  status: string;
+  birth_date: string | null;
+  death_date: string | null;
+  created_at: string;
+  slots: {
+    id: number;
+    price: number;
+    status: string;
+  };
+  photos: {
+    id: string;
+    url: string;
+    title: string | null;
+    caption: string | null;
+  }[];
+  timeline_events?: {
+    id: string;
+    event_date: string;
+    event_text: string;
+    sort_order: number;
+  }[];
+}
+
+const ProfilePage: React.FC = () => {
+  const [legacy, setLegacy] = useState<Legacy | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+  useEffect(() => {
+    const fetchLegacy = async () => {
+      try {
+        // Pour l'instant, on prend la première legacy publique comme exemple
+        const response = await fetch('/api/legacies/public');
+        const data = await response.json();
+
+        if (data.success && data.legacies.length > 0) {
+          // Récupérer les détails de la première legacy avec ses photos
+          const firstLegacyId = data.legacies[0].id;
+          const detailResponse = await fetch(`/api/legacies/public?legacyId=${firstLegacyId}`);
+          const detailData = await detailResponse.json();
+
+          if (detailData.success) {
+            setLegacy(detailData.legacy);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching legacy:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLegacy();
+  }, []);
+
+  const openLightbox = (index: number) => {
+    setCurrentPhotoIndex(index);
+    setLightboxOpen(true);
+  };
+
+  const closeLightbox = () => {
+    setLightboxOpen(false);
+  };
+
+  const nextPhoto = () => {
+    if (legacy && currentPhotoIndex < legacy.photos.length - 1) {
+      setCurrentPhotoIndex(currentPhotoIndex + 1);
+    }
+  };
+
+  const prevPhoto = () => {
+    if (currentPhotoIndex > 0) {
+      setCurrentPhotoIndex(currentPhotoIndex - 1);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading legacy...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!legacy) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 bg-[#D4AF37]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-playfair font-bold text-[#F5F5F0] mb-3">
+            No Public Legacies
+          </h2>
+          <p className="text-gray-400">
+            There are no public legacies to display yet.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] py-12 px-4 sm:px-8">
+      <div className="container mx-auto max-w-6xl">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <div className="inline-block px-4 py-2 bg-[#D4AF37]/20 border border-[#D4AF37]/30 rounded-full mb-4">
+            <span className="text-[#D4AF37] text-sm font-medium">Slot #{legacy.slots.id}</span>
+          </div>
+          <h1 className="text-5xl md:text-6xl font-playfair font-bold text-[#F5F5F0] mb-4">
+            {legacy.full_name}
+          </h1>
+          <div className="flex items-center justify-center gap-3 text-gray-400">
+            {legacy.birth_date && (
+              <span>{new Date(legacy.birth_date).getFullYear()}</span>
+            )}
+            {legacy.birth_date && legacy.death_date && <span>—</span>}
+            {legacy.death_date && (
+              <span>{new Date(legacy.death_date).getFullYear()}</span>
+            )}
+            {!legacy.birth_date && !legacy.death_date && (
+              <span className="px-3 py-1 bg-green-500/20 text-green-400 text-sm rounded-full">
+                {legacy.status}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Quote */}
+        {legacy.quote && (
+          <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-8 mb-12 text-center">
+            <svg className="w-12 h-12 text-[#D4AF37]/30 mx-auto mb-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
+            </svg>
+            <p className="text-2xl md:text-3xl font-playfair italic text-[#F5F5F0]">
+              "{legacy.quote}"
+            </p>
+          </div>
+        )}
+
+        {/* Photo Gallery */}
+        {legacy.photos.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-playfair font-bold text-[#F5F5F0] mb-6 text-center">
+              Photo Gallery
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {legacy.photos.map((photo, index) => (
+                <div
+                  key={photo.id}
+                  onClick={() => openLightbox(index)}
+                  className="relative aspect-square cursor-pointer group overflow-hidden rounded-lg border border-[#D4AF37]/20 hover:border-[#D4AF37]/50 transition-all"
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.title || `Photo ${index + 1}`}
+                    className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                    </svg>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Timeline */}
+        {legacy.timeline_events && legacy.timeline_events.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-playfair font-bold text-[#F5F5F0] mb-8 text-center">
+              Life Timeline
+            </h2>
+            <div className="max-w-3xl mx-auto">
+              <div className="relative">
+                {/* Timeline line */}
+                <div className="absolute left-8 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30"></div>
+
+                {/* Timeline events */}
+                <div className="space-y-8">
+                  {legacy.timeline_events.map((event, index) => (
+                    <div key={event.id} className="relative pl-20">
+                      {/* Timeline dot */}
+                      <div className="absolute left-6 top-2 w-5 h-5 rounded-full bg-[#D4AF37] border-4 border-[#0A0A0A]"></div>
+
+                      {/* Event content */}
+                      <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-4">
+                        <div className="text-[#D4AF37] font-bold mb-2">{event.event_date}</div>
+                        <p className="text-gray-300 leading-relaxed">{event.event_text}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Biography */}
+        <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-8">
+          <h2 className="text-3xl font-playfair font-bold text-[#F5F5F0] mb-6">Biography</h2>
+          <p className="text-gray-300 text-lg leading-relaxed whitespace-pre-wrap">
+            {legacy.biography}
+          </p>
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {lightboxOpen && legacy.photos.length > 0 && (
+        <PhotoLightbox
+          photos={legacy.photos}
+          currentIndex={currentPhotoIndex}
+          onClose={closeLightbox}
+          onNext={nextPhoto}
+          onPrev={prevPhoto}
+        />
+      )}
+    </div>
+  );
+};
+
+export default ProfilePage;
+
+
+================================================================================
+FILE: pages-old/ProfilePage.tsx
+================================================================================
+
+'use client';
+import React, { useEffect, useState } from 'react';
+import PhotoLightbox from '../components/PhotoLightbox';
+
+interface Legacy {
+  id: string;
+  slot_id: number;
+  full_name: string;
+  biography: string;
+  quote: string;
+  status: string;
+  birth_date: string | null;
+  death_date: string | null;
+  created_at: string;
+  slots: {
+    id: number;
+    price: number;
+    status: string;
+  };
+  photos: {
+    id: string;
+    url: string;
+    title: string | null;
+    caption: string | null;
+  }[];
+}
+
+const ProfilePage: React.FC = () => {
+  const [legacy, setLegacy] = useState<Legacy | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+
+  useEffect(() => {
+    const fetchLegacy = async () => {
+      try {
+        // Pour l'instant, on prend la première legacy publique comme exemple
+        const response = await fetch('/api/legacies/public');
+        const data = await response.json();
+
+        if (data.success && data.legacies.length > 0) {
+          // Récupérer les détails de la première legacy avec ses photos
+          const firstLegacyId = data.legacies[0].id;
+          const detailResponse = await fetch(`/api/legacies/public?legacyId=${firstLegacyId}`);
+          const detailData = await detailResponse.json();
+
+          if (detailData.success) {
+            setLegacy(detailData.legacy);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching legacy:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLegacy();
+  }, []);
+
+  const openLightbox = (index: number) => {
+    setCurrentPhotoIndex(index);
+    setLightboxOpen(true);
+  };
+
+  const closeLightbox = () => {
+    setLightboxOpen(false);
+  };
+
+  const nextPhoto = () => {
+    if (legacy && currentPhotoIndex < legacy.photos.length - 1) {
+      setCurrentPhotoIndex(currentPhotoIndex + 1);
+    }
+  };
+
+  const prevPhoto = () => {
+    if (currentPhotoIndex > 0) {
+      setCurrentPhotoIndex(currentPhotoIndex - 1);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading legacy...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!legacy) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 bg-[#D4AF37]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-[#D4AF37]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-playfair font-bold text-[#F5F5F0] mb-3">
+            No Public Legacies
+          </h2>
+          <p className="text-gray-400">
+            There are no public legacies to display yet.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0A0A0A] py-12 px-4 sm:px-8">
+      <div className="container mx-auto max-w-6xl">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <div className="inline-block px-4 py-2 bg-[#D4AF37]/20 border border-[#D4AF37]/30 rounded-full mb-4">
+            <span className="text-[#D4AF37] text-sm font-medium">Slot #{legacy.slots.id}</span>
+          </div>
+          <h1 className="text-5xl md:text-6xl font-playfair font-bold text-[#F5F5F0] mb-4">
+            {legacy.full_name}
+          </h1>
+          <div className="flex items-center justify-center gap-3 text-gray-400">
+            {legacy.birth_date && (
+              <span>{new Date(legacy.birth_date).getFullYear()}</span>
+            )}
+            {legacy.birth_date && legacy.death_date && <span>—</span>}
+            {legacy.death_date && (
+              <span>{new Date(legacy.death_date).getFullYear()}</span>
+            )}
+            {!legacy.birth_date && !legacy.death_date && (
+              <span className="px-3 py-1 bg-green-500/20 text-green-400 text-sm rounded-full">
+                {legacy.status}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Quote */}
+        {legacy.quote && (
+          <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-8 mb-12 text-center">
+            <svg className="w-12 h-12 text-[#D4AF37]/30 mx-auto mb-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z" />
+            </svg>
+            <p className="text-2xl md:text-3xl font-playfair italic text-[#F5F5F0]">
+              "{legacy.quote}"
+            </p>
+          </div>
+        )}
+
+        {/* Photo Gallery */}
+        {legacy.photos.length > 0 && (
+          <div className="mb-12">
+            <h2 className="text-3xl font-playfair font-bold text-[#F5F5F0] mb-6 text-center">
+              Photo Gallery
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {legacy.photos.map((photo, index) => (
+                <div
+                  key={photo.id}
+                  onClick={() => openLightbox(index)}
+                  className="relative aspect-square cursor-pointer group overflow-hidden rounded-lg border border-[#D4AF37]/20 hover:border-[#D4AF37]/50 transition-all"
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.title || `Photo ${index + 1}`}
+                    className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7" />
+                    </svg>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Biography */}
+        <div className="bg-[#1A1A1A] border border-[#D4AF37]/20 rounded-lg p-8">
+          <h2 className="text-3xl font-playfair font-bold text-[#F5F5F0] mb-6">Biography</h2>
+          <p className="text-gray-300 text-lg leading-relaxed whitespace-pre-wrap">
+            {legacy.biography}
+          </p>
+        </div>
+      </div>
+
+      {/* Lightbox */}
+      {lightboxOpen && legacy.photos.length > 0 && (
+        <PhotoLightbox
+          photos={legacy.photos}
+          currentIndex={currentPhotoIndex}
+          onClose={closeLightbox}
+          onNext={nextPhoto}
+          onPrev={prevPhoto}
+        />
+      )}
+    </div>
+  );
+};
+
+export default ProfilePage;
+
+
+================================================================================
+FILE: pages-old/SlotReservationPage.tsx
+================================================================================
+
+'use client';
+import React, { useState, useEffect } from 'react';
+import { Slot } from '../types';
+import { CheckCircleIcon } from '../components/icons/CheckCircleIcon';
+import FileUpload from '../components/FileUpload';
+import TimelineEditor, { TimelineEvent } from '../components/TimelineEditor';
+
+interface SlotReservationPageProps {
+  slot: Slot;
+  onBack: () => void;
+}
+
+// ========================================
+// STEP INDICATOR
+// ========================================
+const StepIndicator: React.FC<{ currentStep: number }> = ({ currentStep }) => {
+  const steps = ['Selection', 'Biography', 'Payment', 'Confirmation'];
+  return (
+    <div className="flex justify-center items-center space-x-2 md:space-x-4 mb-12">
+      {steps.map((step, index) => {
+        const stepNumber = index + 1;
+        const isActive = stepNumber === currentStep;
+        const isCompleted = stepNumber < currentStep;
+        return (
+          <React.Fragment key={step}>
+            <div className="flex items-center space-x-2">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold transition-colors ${
+                  isActive
+                    ? 'bg-[#D4AF37] text-[#0A0A0A]'
+                    : isCompleted
+                    ? 'bg-green-500 text-white'
+                    : 'bg-[#1A1A1A] text-gray-400'
+                }`}
+              >
+                {isCompleted ? <CheckCircleIcon className="w-5 h-5" /> : stepNumber}
+              </div>
+              <span
+                className={`hidden md:inline font-medium ${
+                  isActive
+                    ? 'text-[#D4AF37]'
+                    : isCompleted
+                    ? 'text-gray-300'
+                    : 'text-gray-500'
+                }`}
+              >
+                {step}
+              </span>
+            </div>
+            {index < steps.length - 1 && (
+              <div className="flex-grow h-px bg-gray-700 w-8 md:w-16"></div>
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+};
+
+// ========================================
+// STEP 1: SELECTION
+// ========================================
+const Step1: React.FC<{ slot: Slot; onNext: () => void }> = ({ slot, onNext }) => (
+  <div className="text-center">
+    <h2 className="text-3xl font-playfair mb-4">You have selected your Legacy Slot.</h2>
+    <p className="text-gray-300 mb-8">This unique identifier will forever be associated with your story.</p>
+    <div className="bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-lg p-8 max-w-sm mx-auto">
+      <p className="text-sm text-gray-400">SLOT NUMBER</p>
+      <p className="text-6xl font-mono font-bold text-[#D4AF37] my-2">
+        {String(slot.id).padStart(5, '0')}
+      </p>
+      <p className="text-sm text-gray-400">PRICE</p>
+      <p className="text-3xl font-semibold text-[#F5F5F0]">€{(slot.price / 100).toLocaleString('fr-FR')}</p>
+    </div>
+    <button
+      onClick={onNext}
+      className="mt-8 bg-[#D4AF37] text-[#0A0A0A] font-bold py-3 px-12 rounded-md hover:bg-yellow-300 transition-colors"
+    >
+      Proceed to Biography
+    </button>
+  </div>
+);
+
+// ========================================
+// STEP 2: BIOGRAPHY
+// ========================================
+interface Step2Props {
+  bio: string;
+  setBio: (bio: string) => void;
+  fullName: string;
+  setFullName: (name: string) => void;
+  status: string;
+  setStatus: (status: string) => void;
+  quote: string;
+  setQuote: (quote: string) => void;
+  photos: string[];
+  setPhotos: (photos: string[]) => void;
+  timelineEvents: TimelineEvent[];
+  setTimelineEvents: (events: TimelineEvent[]) => void;
+  onBack: () => void;
+  onNext: () => void;
+}
+
+const Step2: React.FC<Step2Props> = ({
+  bio,
+  setBio,
+  fullName,
+  setFullName,
+  status,
+  setStatus,
+  quote,
+  setQuote,
+  photos,
+  setPhotos,
+  timelineEvents,
+  setTimelineEvents,
+  onBack,
+  onNext,
+}) => {
+  const wordCount = bio.split(/\s+/).filter((word) => word.length > 0).length;
+  const isOverLimit = wordCount > 3000;
+
+  return (
+    <div>
+      <h2 className="text-3xl font-playfair mb-2 text-center">Craft Your Legacy</h2>
+      <p className="text-gray-300 mb-8 text-center">
+        This information will be permanently stored. Take your time.
+      </p>
+      <form className="space-y-6 max-w-2xl mx-auto" onSubmit={(e) => e.preventDefault()}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Full Name</label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-md p-2 focus:ring-1 focus:ring-[#D4AF37] focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="w-full bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-md p-2 focus:ring-1 focus:ring-[#D4AF37] focus:outline-none"
+            >
+              <option value="Living">Living</option>
+              <option value="Deceased">Deceased</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1">Personal Quote</label>
+          <input
+            type="text"
+            value={quote}
+            onChange={(e) => setQuote(e.target.value)}
+            placeholder="A phrase to be remembered by..."
+            className="w-full bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-md p-2 focus:ring-1 focus:ring-[#D4AF37] focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1">
+            Biography (max. 3000 words)
+          </label>
+          <textarea
+            rows={10}
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            className="w-full bg-[#1A1A1A] border border-[#D4AF37]/30 rounded-md p-2 focus:ring-1 focus:ring-[#D4AF37] focus:outline-none"
+          ></textarea>
+          {isOverLimit && (
+            <p className="text-right text-sm text-red-400 mt-1">
+              Limite de 3000 mots atteinte
+            </p>
+          )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Photos (optional, max 10)
+          </label>
+          <FileUpload
+            onUploadComplete={setPhotos}
+            maxFiles={10}
+            existingFiles={photos}
+          />
+        </div>
+        <div>
+          <TimelineEditor
+            events={timelineEvents}
+            onChange={setTimelineEvents}
+          />
+        </div>
+        <div className="flex justify-between items-center pt-4">
+          <button type="button" onClick={onBack} className="text-gray-400 hover:text-white">
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={isOverLimit}
+            className="bg-[#D4AF37] text-[#0A0A0A] font-bold py-3 px-12 rounded-md hover:bg-yellow-300 transition-colors disabled:bg-gray-600 disabled:text-gray-400 disabled:cursor-not-allowed"
+          >
+            Proceed to Payment
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+// ========================================
+// STEP 3: PAYMENT (STRIPE)
+// ========================================
+interface Step3Props {
+  slot: Slot;
+  fullName: string;
+  biography: string;
+  quote: string;
+  status: string;
+  photos: string[];
+  timelineEvents: TimelineEvent[];
+  onBack: () => void;
+  onNext: () => void;
+}
+
+const Step3: React.FC<Step3Props> = ({
+  slot,
+  fullName,
+  biography,
+  quote,
+  status,
+  photos,
+  timelineEvents,
+  onBack,
+  onNext,
+}) => {
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState('');
+
+  const handlePayment = async () => {
+  setIsProcessing(true);
+  setError('');
+
+  try {
+    // Récupérer l'utilisateur connecté
+    const supabase = (await import('@/lib/supabase-browser')).createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      setError('You must be logged in to complete payment');
+      setIsProcessing(false);
+      return;
+    }
+
+    const response = await fetch('/api/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        slotId: slot.id,
+        userId: user.id,
+        fullName,
+        biography,
+        quote,
+        status,
+        photos,
+        timelineEvents,
+      }),
+    });
+
+      const data = await response.json();
+
+      if (data.success && data.url) {
+        // Rediriger vers Stripe Checkout
+        window.location.href = data.url;
+      } else {
+        setError(data.error || 'Failed to create checkout session');
+        setIsProcessing(false);
+      }
+    } catch (err) {
+      console.error('Payment error:', err);
+      setError('An error occurred. Please try again.');
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12">
+      <div className="bg-[#1A1A1A] rounded-lg p-8 border border-gray-800">
+        <h3 className="text-2xl font-playfair mb-6">Order Summary</h3>
+        <div className="space-y-4">
+          <div className="flex justify-between">
+            <span className="text-gray-400">
+              Legacy Slot #{String(slot.id).padStart(5, '0')}
+            </span>
+            <span className="font-semibold">€{(slot.price / 100).toLocaleString('fr-FR')}</span>
+          </div>
+          <div className="border-t border-gray-700 my-4"></div>
+          <div className="flex justify-between text-lg font-bold">
+            <span>Total</span>
+            <span className="text-[#D4AF37]">€{(slot.price / 100).toLocaleString('fr-FR')}</span>
+          </div>
+        </div>
+        <div className="mt-8 text-xs text-gray-500">
+          <p>
+            Payment is processed securely by Stripe. Your legacy data is encrypted and prepared
+            for permanent storage upon successful transaction.
+          </p>
+        </div>
+      </div>
+
+      <div className="p-8">
+        <h3 className="text-2xl font-playfair mb-6">Secure Payment</h3>
+
+        {error && (
+          <div className="bg-red-900/20 border border-red-500 text-red-400 p-4 rounded-md mb-6">
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-4 mb-8">
+          <div className="flex items-center gap-3 text-sm text-gray-300">
+            <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span>Secure payment powered by Stripe</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-gray-300">
+            <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span>SSL encrypted transaction</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-gray-300">
+            <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clipRule="evenodd"
+              />
+            </svg>
+            <span>Full refund within 14 days</span>
+          </div>
+        </div>
+
+        <div className="flex justify-between items-center pt-8">
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={isProcessing}
+            className="text-gray-400 hover:text-white disabled:opacity-50"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={handlePayment}
+            disabled={isProcessing}
+            className="bg-[#D4AF37] text-[#0A0A0A] font-bold py-3 px-12 rounded-md hover:bg-yellow-300 transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isProcessing ? (
+              <>
+                <svg
+                  className="animate-spin h-5 w-5"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  ></path>
+                </svg>
+                Processing...
+              </>
+            ) : (
+              'Proceed to Payment'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ========================================
+// STEP 4: CONFIRMATION
+// ========================================
+const Step4: React.FC<{ slot: Slot; onBack: () => void }> = ({ slot, onBack }) => (
+  <div className="text-center max-w-lg mx-auto">
+    <CheckCircleIcon className="w-24 h-24 text-green-500 mx-auto mb-6" />
+    <h2 className="text-4xl font-playfair mb-4">Your Legacy is Secured.</h2>
+    <p className="text-gray-300 mb-8">
+      Congratulations. Slot #{String(slot.id).padStart(5, '0')} is now yours, permanently. A
+      confirmation has been sent to your email.
+    </p>
+    <button
+      onClick={onBack}
+      className="bg-[#D4AF37] text-[#0A0A0A] font-bold py-3 px-12 rounded-md hover:bg-yellow-300 transition-colors"
+    >
+      Go to Dashboard
+    </button>
+  </div>
+);
+
+// ========================================
+// MAIN COMPONENT
+// ========================================
+const SlotReservationPage: React.FC<SlotReservationPageProps> = ({ slot, onBack }) => {
+  const [step, setStep] = useState(1);
+  const [bio, setBio] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [status, setStatus] = useState('Living');
+  const [quote, setQuote] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([
+    { date: '', text: '' },
+    { date: '', text: '' },
+    { date: '', text: '' },
+  ]);
+
+  // Release slot function
+  const releaseSlot = async () => {
+    try {
+      await fetch('/api/slots/release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slotId: slot.id }),
+      });
+      console.log(`✅ Slot #${slot.id} released`);
+    } catch (error) {
+      console.error('Error releasing slot:', error);
+    }
+  };
+
+  // Detect page close
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const blob = new Blob([JSON.stringify({ slotId: slot.id })], {
+        type: 'application/json',
+      });
+      navigator.sendBeacon('/api/slots/release', blob);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [slot.id]);
+
+  // Back button handler
+  const handleBack = async () => {
+    if (step === 1) {
+      await releaseSlot();
+      onBack();
+    } else {
+      setStep(step - 1);
+    }
+  };
+
+  const renderStepContent = () => {
+    switch (step) {
+      case 1:
+        return <Step1 slot={slot} onNext={() => setStep(2)} />;
+      case 2:
+        return (
+          <Step2
+            bio={bio}
+            setBio={setBio}
+            fullName={fullName}
+            setFullName={setFullName}
+            status={status}
+            setStatus={setStatus}
+            quote={quote}
+            setQuote={setQuote}
+            photos={photos}
+            setPhotos={setPhotos}
+            timelineEvents={timelineEvents}
+            setTimelineEvents={setTimelineEvents}
+            onBack={handleBack}
+            onNext={() => setStep(3)}
+          />
+        );
+      case 3:
+        return (
+          <Step3
+            slot={slot}
+            fullName={fullName}
+            biography={bio}
+            quote={quote}
+            status={status}
+            photos={photos}
+            timelineEvents={timelineEvents}
+            onBack={handleBack}
+            onNext={() => setStep(4)}
+          />
+        );
+      case 4:
+        return <Step4 slot={slot} onBack={onBack} />;
+      default:
+        return <Step1 slot={slot} onNext={() => setStep(2)} />;
+    }
+  };
+
+  return (
+    <div className="container mx-auto px-4 py-12">
+      <div className="flex justify-between items-center mb-8">
+        <button
+          onClick={async () => {
+            await releaseSlot();
+            onBack();
+          }}
+          className="px-8 py-3 bg-red-600 hover:bg-red-700 text-white rounded-md font-medium transition-colors"
+        >
+          Cancel Reservation
+        </button>
+        <button
+          onClick={handleBack}
+          className="px-8 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-md font-medium transition-colors"
+        >
+          Back
+        </button>
+      </div>
+      <StepIndicator currentStep={step} />
+      <div className="mt-8">{renderStepContent()}</div>
+    </div>
+  );
+};
+
+export default SlotReservationPage;
+
+
+================================================================================
+FILE: pages-old/SlotsAvailablePage.tsx
+================================================================================
+
+import React, { useState, useMemo, useEffect } from 'react';
+import SlotCard from '../components/SlotCard';
+import Pagination from '../components/Pagination';
+import { TOTAL_SLOTS } from '../constants';
+import { Slot, SlotStatus } from '../types';
+import ProgressBar from '../components/ProgressBar';
+import AuthModal from '../components/AuthModal';
+
+const SLOTS_PER_PAGE = 12;
+
+interface SlotsAvailablePageProps {
+  onSelectSlot: (slot: Slot) => void;
+}
+
+const SlotsAvailablePage: React.FC<SlotsAvailablePageProps> = ({ onSelectSlot }) => {
+  const [allSlots, setAllSlots] = useState<Slot[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortOrder, setSortOrder] = useState('number_asc');
+  const [priceRange, setPriceRange] = useState({ min: '', max: '' });
+  const [numberRange, setNumberRange] = useState({ min: '', max: '' });
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // Charger les slots depuis l'API
+  useEffect(() => {
+    const fetchSlots = async () => {
+  try {
+    const response = await fetch('/api/slots/available');
+    const data = await response.json();
+    if (data.success) {
+      // Limiter à 200 slots maximum
+      setAllSlots(data.slots.slice(0, 200));
+    } else {
+          console.error('Failed to fetch slots:', data.error);
+        }
+      } catch (error) {
+        console.error('Error fetching slots:', error);
+      }
+    };
+
+    fetchSlots();
+    
+    // Recharger toutes les 5 secondes pour voir les expirations
+    const interval = setInterval(fetchSlots, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Filtrage + tri
+  const filteredAndSortedSlots = useMemo(() => {
+    let filteredSlots = [...allSlots];
+
+    // FILTRE CRITIQUE : Seulement les slots Available et Reserved
+    filteredSlots = filteredSlots.filter(slot => 
+      slot.status === SlotStatus.Available || slot.status === SlotStatus.Reserved
+    );
+
+    // Filter by price
+    if (priceRange.min) {
+      const minPrice = parseInt(priceRange.min);
+      if (!isNaN(minPrice)) {
+        filteredSlots = filteredSlots.filter(s => s.price >= minPrice);
+      }
+    }
+    if (priceRange.max) {
+      const maxPrice = parseInt(priceRange.max);
+      if (!isNaN(maxPrice)) {
+        filteredSlots = filteredSlots.filter(s => s.price <= maxPrice);
+      }
+    }
+
+    // Filter by number
+    if (numberRange.min) {
+      const minNumber = parseInt(numberRange.min);
+      if (!isNaN(minNumber)) {
+        filteredSlots = filteredSlots.filter(s => s.id >= minNumber);
+      }
+    }
+    if (numberRange.max) {
+      const maxNumber = parseInt(numberRange.max);
+      if (!isNaN(maxNumber)) {
+        filteredSlots = filteredSlots.filter(s => s.id <= maxNumber);
+      }
+    }
+
+    // Sort
+    filteredSlots.sort((a, b) => {
+      switch (sortOrder) {
+        case 'price_asc':
+          return a.price - b.price;
+        case 'price_desc':
+          return b.price - a.price;
+        case 'number_desc':
+          return b.id - a.id;
+        case 'number_asc':
+        default:
+          return a.id - b.id;
+      }
+    });
+
+    return filteredSlots;
+  }, [allSlots, sortOrder, priceRange, numberRange]);
+
+  const totalPages = Math.ceil(filteredAndSortedSlots.length / SLOTS_PER_PAGE);
+  const currentSlots = filteredAndSortedSlots.slice(
+    (currentPage - 1) * SLOTS_PER_PAGE,
+    currentPage * SLOTS_PER_PAGE
+  );
+
+  // Stats
+  const stats = useMemo(() => {
+    const available = allSlots.filter(s => s.status === SlotStatus.Available).length;
+    const reserved = allSlots.filter(s => s.status === SlotStatus.Reserved).length;
+    const sold = allSlots.filter(s => s.status === SlotStatus.Sold).length;
+    const locked = allSlots.filter(s => s.status === SlotStatus.Locked).length;
+    return { available, reserved, sold, locked };
+  }, [allSlots]);
+
+
+  const handleSelectSlot = async (slot: Slot) => {
+  if (slot.status === SlotStatus.Available) {
+    // Vérifier si l'utilisateur est connecté
+    const supabase = (await import('@/lib/supabase-browser')).createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    // Naviguer IMMÉDIATEMENT vers la page de réservation (optimistic UI)
+    onSelectSlot(slot);
+
+    // Faire l'appel API en arrière-plan
+    try {
+      const response = await fetch('/api/slots/reserve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slotId: slot.id })
+      });
+      const data = await response.json();
+      
+      if (!data.success) {
+        // Si ça échoue, revenir en arrière
+        alert(data.error || 'Failed to reserve slot. Please try again.');
+        window.location.reload();
+      }
+    } catch (error) {
+      console.error('Error reserving slot:', error);
+      alert('An error occurred. Please try again.');
+      window.location.reload();
+    }
+  }
+};
+
+
+  return (
+    <div className="container mx-auto px-4 py-12 animate-[fadeIn_1s_ease-out]">
+      <div className="text-center mb-12">
+        <h1 className="text-5xl md:text-6xl font-playfair font-black text-[#F5F5F0] tracking-wide">The Vault</h1>
+        <p className="mt-4 text-lg text-gray-300 max-w-2xl mx-auto">Browse the 10,000 unique slots. Each one a vessel for a permanent legacy.</p>
+      </div>
+
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold text-green-400">{stats.available}</div>
+          <div className="text-sm text-gray-400">Available</div>
+        </div>
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold text-yellow-400">{stats.reserved}</div>
+          <div className="text-sm text-gray-400">Reserved</div>
+        </div>
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold text-red-400">{stats.sold}</div>
+          <div className="text-sm text-gray-400">Sold</div>
+        </div>
+        <div className="bg-[#1A1A1A] p-4 rounded-lg text-center">
+          <div className="text-2xl font-bold text-purple-400">{stats.locked}</div>
+          <div className="text-sm text-gray-400">Locked</div>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-12">
+        <ProgressBar value={stats.available} max={TOTAL_SLOTS} label="Slots Remaining" />
+      </div>
+
+      {/* Filtering & Sorting */}
+      <div className="bg-black/20 backdrop-blur-sm border border-white/10 p-4 rounded-lg mb-8 flex flex-wrap items-center justify-between gap-4 sticky top-[88px] z-40">
+        <div className="flex items-center gap-2">
+          <label htmlFor="sort" className="text-sm font-medium text-gray-400">Sort by:</label>
+          <select 
+            id="sort" 
+            value={sortOrder} 
+            onChange={(e) => setSortOrder(e.target.value)} 
+            className="bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-[#D4AF37] focus:outline-none transition-colors"
+          >
+            <option value="number_asc">Slot Number (Asc)</option>
+            <option value="number_desc">Slot Number (Desc)</option>
+            <option value="price_asc">Price (Low to High)</option>
+            <option value="price_desc">Price (High to Low)</option>
+          </select>
+        </div>
+        
+        {/* Filtres de prix et de numéro */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-gray-400">Price:</span>
+          <input 
+            type="number" 
+            placeholder="Min" 
+            value={priceRange.min} 
+            onChange={e => setPriceRange(p => ({...p, min: e.target.value}))} 
+            className="w-24 bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-3 py-2 text-sm"
+          />
+          <span className="text-gray-600">-</span>
+          <input 
+            type="number" 
+            placeholder="Max" 
+            value={priceRange.max} 
+            onChange={e => setPriceRange(p => ({...p, max: e.target.value}))} 
+            className="w-24 bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-3 py-2 text-sm"
+          />
+        </div>
+        
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-gray-400">Slot #:</span>
+          <input 
+            type="number" 
+            placeholder="Min" 
+            value={numberRange.min} 
+            onChange={e => setNumberRange(p => ({...p, min: e.target.value}))} 
+            className="w-24 bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-3 py-2 text-sm"
+          />
+          <span className="text-gray-600">-</span>
+          <input 
+            type="number" 
+            placeholder="Max" 
+            value={numberRange.max} 
+            onChange={e => setNumberRange(p => ({...p, max: e.target.value}))} 
+            className="w-24 bg-[#0A0A0A] border border-[#D4AF37]/30 rounded-md px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Slots Grid Display */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {currentSlots.map(slot => (
+          <SlotCard 
+            key={slot.id} 
+            slot={slot} 
+            onSelect={handleSelectSlot}
+          />
+        ))}
+      </div>
+      
+      {filteredAndSortedSlots.length === 0 && (
+        <div className="text-center py-16 text-gray-400">No slots match your criteria.</div>
+      )}
+      
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <Pagination 
+          currentPage={currentPage} 
+          totalPages={totalPages} 
+          onPageChange={setCurrentPage} 
+        />
+      )}
+
+      {/* Auth Modal */}
+      <AuthModal 
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onLogin={() => {
+          setShowAuthModal(false);
+          window.location.href = '/auth/login';
+        }}
+      />
+    </div>
+  );
+};
+
+export default SlotsAvailablePage;
+
+
+================================================================================
+FILE: postcss.config.mjs
+================================================================================
+
+/** @type {import('postcss-load-config').Config} */
+const config = {
+  plugins: {
+    '@tailwindcss/postcss': {},
+  },
+};
+
+export default config;
+
+
+================================================================================
+FILE: tailwind.config.ts
+================================================================================
+
+import type { Config } from "tailwindcss";
+
+export default {
+  content: [
+    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./pages-old/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  theme: {
+    extend: {
+      colors: {
+        background: "var(--background)",
+        foreground: "var(--foreground)",
+      },
+      fontFamily: {
+        inter: ["var(--font-inter)"],
+        playfair: ["var(--font-playfair)"],
+      },
+      animation: {
+        fadeIn: "fadeIn 1s ease-out",
+        fadeInZoom: "fadeInZoom 1.5s ease-out forwards",
+      },
+    },
+  },
+  plugins: [],
+} satisfies Config;
+
+
+================================================================================
+FILE: tsconfig.json
+================================================================================
+
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+
+
+
+================================================================================
+FILE: types/index.ts
+================================================================================
+
+export enum Page {
+  Landing = 'LANDING',
+  Slots = 'SLOTS',
+  AllSlots = 'ALL_SLOTS',
+  Reservation = 'RESERVATION',
+  Profile = 'PROFILE',
+  Dashboard = 'DASHBOARD',
+}
+
+export enum SlotStatus {
+  Available = 'available',
+  Reserved = 'reserved',
+  Sold = 'sold',
+  Locked = 'locked',
+}
+
+export interface Slot {
+  id: number;
+  price: number;
+  status: SlotStatus;
+  reservedUntil?: Date;     // ← NOUVEAU : date d'expiration de réservation
+}
+
+export interface Profile {
+  slotId: number;
+  fullName: string;
+  birthDate: string;
+  deathDate?: string;
+  quote: string;
+  biography: string;
+  profileImage: string;
+  gallery: string[];
+  timeline: TimelineEvent[];
+}
+
+export interface TimelineEvent {
+  year: number;
+  title: string;
+  description: string;
+}
+
